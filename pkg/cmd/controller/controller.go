@@ -1,11 +1,11 @@
 package controller
 
 import (
-	"github.com/jenkins-x/jx/pkg/cmd/helper"
+	"github.com/jiubian-cicd/env-controller/pkg/cmd/opts"
 	"github.com/spf13/cobra"
 
-	"github.com/jenkins-x/jx/pkg/cmd/opts"
-	"github.com/jenkins-x/jx/pkg/cmd/templates"
+	"github.com/jiubian-cicd/env-controller/pkg/cmd/helper"
+	"github.com/jiubian-cicd/env-controller/pkg/cmd/templates"
 )
 
 // ControllerOptions contains the CLI options

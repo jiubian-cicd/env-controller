@@ -1,9 +1,6 @@
 package controller
 
 import (
-	"crypto/hmac"
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -15,13 +12,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/pkg/errors"
 
-	"github.com/jenkins-x/jx/pkg/cmd/helper"
-	"github.com/jenkins-x/jx/pkg/gits"
-	"github.com/jenkins-x/jx/pkg/util"
-	"github.com/jenkins-x/jx/pkg/jenkinsfile"
-	"github.com/jenkins-x/jx/pkg/kube/services"
-	"github.com/jenkins-x/jx/pkg/cmd/step/git"
-	"github.com/jenkins-x/jx/pkg/cmd/opts"
+	"github.com/jiubian-cicd/env-controller/pkg/cmd/helper"
+	"github.com/jiubian-cicd/env-controller/pkg/cmd/templates"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/jiubian-cicd/env-controller/pkg/util"
+	"github.com/jiubian-cicd/env-controller/pkg/cmd/opts"
+	"github.com/jiubian-cicd/env-controller/pkg/gits"
+	"github.com/jiubian-cicd/env-controller/pkg/kube/services"
 )
 
 const (
@@ -33,6 +31,7 @@ const (
 
 // ControllerEnvironmentOptions holds the command line arguments
 type ControllerEnvironmentOptions struct {
+	*opts.CommonOptions
 	BindAddress           string
 	Path                  string
 	Port                  int
@@ -79,8 +78,8 @@ func NewCmdControllerEnvironment(commonOpts *opts.CommonOptions) *cobra.Command 
 		},
 	}
 
-	cmd.Flags().IntVarP(&options.Port, optionPort, "", 8080, "The TCP port to listen on.")
-	cmd.Flags().StringVarP(&options.BindAddress, optionBind, "", "",
+	cmd.Flags().IntVarP(&options.Port, "port", "", 8080, "The TCP port to listen on.")
+	cmd.Flags().StringVarP(&options.BindAddress, "bind", "", "",
 		"The interface address to bind to (by default, will listen on all interfaces/addresses).")
 	cmd.Flags().StringVarP(&options.Path, "path", "", "/hook",
 		"The path to listen on for requests to trigger a pipeline run.")
@@ -95,10 +94,6 @@ func NewCmdControllerEnvironment(commonOpts *opts.CommonOptions) *cobra.Command 
 	cmd.Flags().StringVarP(&options.WebHookURL, "webhook-url", "w", "", "The external WebHook URL of this controller to register with the git provider. If not specified defaults to $WEBHOOK_URL")
 	cmd.Flags().StringVarP(&options.PushRef, "push-ref", "", "refs/heads/master", "The git ref passed from the WebHook which should trigger a new deploy pipeline to trigger. Defaults to only webhooks from the master branch")
 
-	so := &options.StepCreateTaskOptions
-	so.CommonOptions = commonOpts
-	so.Cmd = cmd
-	so.AddCommonFlags(cmd)
 	return cmd
 }
 
@@ -107,25 +102,6 @@ func (o *ControllerEnvironmentOptions) Run() error {
 
 	if o.Path == "" {
 		return util.MissingOption("path")
-	}
-
-	log.Logger().Infof("using require GitHub headers: %s", strconv.FormatBool(o.RequireHeaders))
-
-	// lets default some values from environment variables
-	if o.StepCreateTaskOptions.ProjectID == "" {
-		o.StepCreateTaskOptions.ProjectID = os.Getenv("PROJECT_ID")
-	}
-	if o.StepCreateTaskOptions.BuildPackRef == "" {
-		o.StepCreateTaskOptions.BuildPackRef = os.Getenv("BUILD_PACK_REF")
-	}
-	if o.StepCreateTaskOptions.BuildPackURL == "" {
-		o.StepCreateTaskOptions.BuildPackURL = os.Getenv("BUILD_PACK_URL")
-	}
-	if o.StepCreateTaskOptions.DockerRegistry == "" {
-		o.StepCreateTaskOptions.DockerRegistry = os.Getenv("DOCKER_REGISTRY")
-	}
-	if o.StepCreateTaskOptions.DockerRegistryOrg == "" {
-		o.StepCreateTaskOptions.DockerRegistryOrg = os.Getenv("DOCKER_REGISTRY_ORG")
 	}
 
 	var err error
@@ -153,7 +129,7 @@ func (o *ControllerEnvironmentOptions) Run() error {
 	if o.GitKind == "" {
 		o.GitKind = os.Getenv("GIT_KIND")
 		if o.GitKind == "" {
-			log.Logger().Warnf("No $GIT_KIND defined or --git-kind supplied to assuming GitHub.com environment git repository")
+			fmt.Sprintf("No $GIT_KIND defined or --git-kind supplied to assuming GitHub.com environment git repository")
 		}
 	}
 	if o.GitOwner == "" {
@@ -187,7 +163,7 @@ func (o *ControllerEnvironmentOptions) Run() error {
 	if o.SourceURL == "" {
 		o.SourceURL = util.UrlJoin(o.GitServerURL, o.GitOwner, o.GitRepo)
 	}
-	log.Logger().Infof("using environment source directory %s and external webhook URL: %s", util.ColorInfo(o.SourceURL), util.ColorInfo(o.WebHookURL))
+	fmt.Sprintf("using environment source directory %s and external webhook URL: %s", util.ColorInfo(o.SourceURL), util.ColorInfo(o.WebHookURL))
 	o.secret, err = o.loadOrCreateHmacSecret()
 	if err != nil {
 		return errors.Wrapf(err, "loading hmac secret")
@@ -209,8 +185,8 @@ func (o *ControllerEnvironmentOptions) Run() error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle(healthPath, http.HandlerFunc(o.health))
-	mux.Handle(readyPath, http.HandlerFunc(o.ready))
+	mux.Handle("/health", http.HandlerFunc(o.health))
+	mux.Handle("/ready", http.HandlerFunc(o.ready))
 
 	indexPaths := []string{"/", "/index.html"}
 	for _, p := range indexPaths {
@@ -221,19 +197,17 @@ func (o *ControllerEnvironmentOptions) Run() error {
 
 	mux.Handle(o.Path, http.HandlerFunc(o.handleWebHookRequests))
 
-	log.Logger().Infof("Environment Controller is now listening on %s for WebHooks from the source repository %s to trigger promotions", util.ColorInfo(util.UrlJoin(o.WebHookURL, o.Path)), util.ColorInfo(o.SourceURL))
+	fmt.Sprintf("Environment Controller is now listening on %s for WebHooks from the source repository %s to trigger promotions", util.ColorInfo(util.UrlJoin(o.WebHookURL, o.Path)), util.ColorInfo(o.SourceURL))
 	return http.ListenAndServe(":"+strconv.Itoa(o.Port), mux)
 }
 
 // health returns either HTTP 204 if the service is healthy, otherwise nothing ('cos it's dead).
 func (o *ControllerEnvironmentOptions) health(w http.ResponseWriter, r *http.Request) {
-	log.Logger().Debug("Health check")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // ready returns either HTTP 204 if the service is ready to serve requests, otherwise HTTP 503.
 func (o *ControllerEnvironmentOptions) ready(w http.ResponseWriter, r *http.Request) {
-	log.Logger().Debug("Ready check")
 	if o.isReady() {
 		w.WriteHeader(http.StatusNoContent)
 	} else {
@@ -243,56 +217,13 @@ func (o *ControllerEnvironmentOptions) ready(w http.ResponseWriter, r *http.Requ
 
 // getIndex returns a simple home page
 func (o *ControllerEnvironmentOptions) getIndex(w http.ResponseWriter, r *http.Request) {
-	log.Logger().Debug("GET index")
 	w.Write([]byte(helloMessage))
 }
 
-// handle request for pipeline runs
 func (o *ControllerEnvironmentOptions) startPipelineRun(w http.ResponseWriter, r *http.Request) {
-	err := o.stepGitCredentials()
-	if err != nil {
-		log.Logger().Warn(err.Error())
-	}
-
-	sourceURL := o.SourceURL
-	branch := o.Branch
-	revision := "master"
-	scCopy := o.StepCreateTaskOptions
-	pr := &scCopy
-	coCopy := *o.CommonOptions
-	pr.CommonOptions = &coCopy
-
-	// defaults
-	pr.PipelineKind = jenkinsfile.PipelineKindRelease
-	pr.SourceName = "source"
-	pr.Duration = time.Second * 20
-	pr.CloneGitURL = sourceURL
-	pr.DeleteTempDir = true
-	pr.Branch = branch
-	pr.Revision = revision
-	pr.RemoteCluster = true
-
-	// turn map into string array with = separator to match type of custom labels which are CLI flags
-	for key, value := range o.Labels {
-		pr.CustomLabels = append(pr.CustomLabels, fmt.Sprintf("%s=%s", key, value))
-	}
-
-	log.Logger().Infof("triggering pipeline for repo %s branch %s revision %s", sourceURL, branch, revision)
-
-	err = pr.Run()
-	if err != nil {
-		o.returnError(err, err.Error(), w, r)
-		return
-	}
-
-	results := &PipelineRunResponse{
-		Resources: pr.Results.ObjectReferences(),
-	}
-	err = o.marshalPayload(w, r, results)
-	if err != nil {
-		o.returnError(err, "failed to marshal payload", w, r)
-	}
+	fmt.Sprintf("start pipe line")
 }
+
 
 // discoverWebHookURL lets try discover the webhook URL from the Service
 func (o *ControllerEnvironmentOptions) discoverWebHookURL() (string, error) {
@@ -324,7 +255,7 @@ func (o *ControllerEnvironmentOptions) discoverWebHookURL() (string, error) {
 
 			if !loggedWait {
 				loggedWait = true
-				log.Logger().Infof("waiting for the external IP on the service %s in namespace %s ...", environmentControllerService, ns)
+				fmt.Sprintf("waiting for the external IP on the service %s in namespace %s ...", environmentControllerService, ns)
 			}
 			return false, nil
 		}
@@ -425,75 +356,27 @@ func (o *ControllerEnvironmentOptions) marshalPayload(w http.ResponseWriter, r *
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
 
-	log.Logger().Infof("completed request successfully and returned: %s", string(data))
+	fmt.Sprintf("completed request successfully and returned: %s", string(data))
 	return nil
 }
 
-func (o *ControllerEnvironmentOptions) returnError(err error, message string, w http.ResponseWriter, r *http.Request) {
-	log.Logger().Errorf("returning error: %v %s", err, message)
-	responseHTTPError(w, http.StatusInternalServerError, "500 Internal Error: "+message+" "+err.Error())
-}
 
-func (o *ControllerEnvironmentOptions) stepGitCredentials() error {
-	if !o.NoGitCredeentialsInit {
-		copy := *o.CommonOptions
-		copy.BatchMode = true
-		gsc := &git.StepGitCredentialsOptions{
-			StepOptions: opts.StepOptions{
-				CommonOptions: &copy,
-			},
-		}
-		err := gsc.Run()
-		if err != nil {
-			return errors.Wrapf(err, "failed to run: jx step gc credentials")
-		}
-	}
-	return nil
-}
 
 // handle request for pipeline runs
 func (o *ControllerEnvironmentOptions) handleWebHookRequests(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		// liveness probe etc
-		log.Logger().Infof("webhook handler not post mothod")
+		fmt.Sprintf("webhook handler not post mothod")
 		o.getIndex(w, r)
 		return
 	}
-	eventType, eventGUID, data, valid, _ := ValidateWebhook(w, r, o.secret, o.RequireHeaders)
-	log.Logger().Infof("webhook handler invoked event type %s UID %s valid %s method %s", eventType, eventGUID, strconv.FormatBool(valid), r.Method)
-	if !valid {
-		return
-	}
-	if eventType != "push" {
-		w.Write([]byte(helloMessage + "ignoring webhook event type: " + eventType))
-		return
-	}
-	if len(data) == 0 {
-		w.Write([]byte(helloMessage + "ignoring webhook event type: " + eventType + " as no payload"))
-		return
-	}
-
-	// lets return 200 so we don't keep getting retries from GitHub :)
-
-	event := github.PushEvent{}
-	if err := json.Unmarshal(data, &event); err != nil {
-		responseHTTPError(w, http.StatusBadRequest, "400 Bad Request: Could not unmarshal the PushEvent")
-		return
-	}
-	if event.Ref != o.PushRef {
-		w.Write([]byte(helloMessage + "ignoring webhook event type: " + eventType + " on refs: " + event.Ref))
-		return
-	}
-
-	log.Logger().Infof("starting pipeline from event type %s UID %s valid %s method %s", eventType, eventGUID, strconv.FormatBool(valid), r.Method)
-	w.Write([]byte("OK"))
 
 	go o.startPipelineRun(w, r)
 }
 
 func (o *ControllerEnvironmentOptions) registerWebHook(webhookURL string, secret []byte) error {
 	gitURL := o.SourceURL
-	log.Logger().Infof("verifying that the webhook is registered for the git repository %s", util.ColorInfo(gitURL))
+	fmt.Sprintf("verifying that the webhook is registered for the git repository %s", util.ColorInfo(gitURL))
 
 	var provider gits.GitProvider
 	var err error
@@ -515,7 +398,7 @@ func (o *ControllerEnvironmentOptions) registerWebHook(webhookURL string, secret
 			return errors.Wrapf(err, "failed to create git provider for git URL %s", gitURL)
 		}
 	}
-	log.Logger().Infof("Regist git web hoot arguments owner: %s repo %s webhookUrl %s secret %s", o.GitOwner, o.GitRepo, webhookURL, string(secret))
+	fmt.Sprintf("Regist git web hoot arguments owner: %s repo %s webhookUrl %s secret %s", o.GitOwner, o.GitRepo, webhookURL, string(secret))
 	webHookData := &gits.GitWebHookArguments{
 		Owner: o.GitOwner,
 		Repo: &gits.GitRepository{
@@ -531,144 +414,3 @@ func (o *ControllerEnvironmentOptions) registerWebHook(webhookURL string, secret
 	return nil
 }
 
-func ValidateGitlabWebhook(w http.ResponseWriter, r *http.Request, hmacSecret []byte, requireGitHubHeaders bool) (string, string, []byte, bool, int) {
-	defer r.Body.Close()
-
-	// Our health check uses GET, so just kick back a 200.
-	if r.Method == http.MethodGet {
-		return "", "", nil, false, http.StatusOK
-	}
-
-	// Header checks: It must be a POST with an event type and a signature.
-	if r.Method != http.MethodPost {
-		responseHTTPError(w, http.StatusMethodNotAllowed, "405 Method not allowed")
-		return "", "", nil, false, http.StatusMethodNotAllowed
-	}
-	eventType := r.Header.Get("X-GitLab-Event")
-	eventGUID := r.Header.Get("X-GitHub-Delivery")
-	if requireGitHubHeaders {
-		if eventType == "" {
-			responseHTTPError(w, http.StatusBadRequest, "400 Bad Request: Missing X-GitHub-Event Header")
-			return "", "", nil, false, http.StatusBadRequest
-		}
-		if eventGUID == "" {
-			responseHTTPError(w, http.StatusBadRequest, "400 Bad Request: Missing X-GitHub-Delivery Header")
-			return "", "", nil, false, http.StatusBadRequest
-		}
-	} else {
-		if eventType == "" {
-			eventType = "push"
-		}
-	}
-	sig := r.Header.Get("X-Hub-Signature")
-	if sig == "" {
-		responseHTTPError(w, http.StatusForbidden, "403 Forbidden: Missing X-Hub-Signature")
-		return "", "", nil, false, http.StatusForbidden
-	}
-	contentType := r.Header.Get("content-type")
-	if contentType != "application/json" {
-		responseHTTPError(w, http.StatusBadRequest, "400 Bad Request: Hook only accepts content-type: application/json - please reconfigure this hook on GitHub")
-		return "", "", nil, false, http.StatusBadRequest
-	}
-	payload, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		responseHTTPError(w, http.StatusInternalServerError, "500 Internal Server Error: Failed to read request body")
-		return "", "", nil, false, http.StatusInternalServerError
-	}
-	// Validate the payload with our HMAC secret.
-	if !ValidatePayload(payload, sig, hmacSecret) {
-		responseHTTPError(w, http.StatusForbidden, "403 Forbidden: Invalid X-Hub-Signature")
-		return "", "", nil, false, http.StatusForbidden
-	}
-	return eventType, eventGUID, payload, true, http.StatusOK
-}
-
-
-// ValidateWebhook ensures that the provided request conforms to the
-// format of a Github webhook and the payload can be validated with
-// the provided hmac secret. It returns the event type, the event guid,
-// the payload of the request, whether the webhook is valid or not,
-// and finally the resultant HTTP status code
-func ValidateWebhook(w http.ResponseWriter, r *http.Request, hmacSecret []byte, requireGitHubHeaders bool) (string, string, []byte, bool, int) {
-	defer r.Body.Close()
-
-	// Our health check uses GET, so just kick back a 200.
-	if r.Method == http.MethodGet {
-		return "", "", nil, false, http.StatusOK
-	}
-
-	// Header checks: It must be a POST with an event type and a signature.
-	if r.Method != http.MethodPost {
-		responseHTTPError(w, http.StatusMethodNotAllowed, "405 Method not allowed")
-		return "", "", nil, false, http.StatusMethodNotAllowed
-	}
-	eventType := r.Header.Get("X-GitHub-Event")
-	eventGUID := r.Header.Get("X-GitHub-Delivery")
-	if requireGitHubHeaders {
-		if eventType == "" {
-			responseHTTPError(w, http.StatusBadRequest, "400 Bad Request: Missing X-GitHub-Event Header")
-			return "", "", nil, false, http.StatusBadRequest
-		}
-		if eventGUID == "" {
-			responseHTTPError(w, http.StatusBadRequest, "400 Bad Request: Missing X-GitHub-Delivery Header")
-			return "", "", nil, false, http.StatusBadRequest
-		}
-	} else {
-		if eventType == "" {
-			eventType = "push"
-		}
-	}
-	sig := r.Header.Get("X-Hub-Signature")
-	if sig == "" {
-		responseHTTPError(w, http.StatusForbidden, "403 Forbidden: Missing X-Hub-Signature")
-		return "", "", nil, false, http.StatusForbidden
-	}
-	contentType := r.Header.Get("content-type")
-	if contentType != "application/json" {
-		responseHTTPError(w, http.StatusBadRequest, "400 Bad Request: Hook only accepts content-type: application/json - please reconfigure this hook on GitHub")
-		return "", "", nil, false, http.StatusBadRequest
-	}
-	payload, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		responseHTTPError(w, http.StatusInternalServerError, "500 Internal Server Error: Failed to read request body")
-		return "", "", nil, false, http.StatusInternalServerError
-	}
-	// Validate the payload with our HMAC secret.
-	if !ValidatePayload(payload, sig, hmacSecret) {
-		responseHTTPError(w, http.StatusForbidden, "403 Forbidden: Invalid X-Hub-Signature")
-		return "", "", nil, false, http.StatusForbidden
-	}
-	return eventType, eventGUID, payload, true, http.StatusOK
-}
-
-// ValidatePayload ensures that the request payload signature matches the key.
-func ValidatePayload(payload []byte, sig string, key []byte) bool {
-	if !strings.HasPrefix(sig, "sha1=") {
-		return false
-	}
-	sig = sig[5:]
-	sb, err := hex.DecodeString(sig)
-	if err != nil {
-		return false
-	}
-	mac := hmac.New(sha1.New, key)
-	mac.Write(payload)
-	expected := mac.Sum(nil)
-	return hmac.Equal(sb, expected)
-}
-
-// PayloadSignature returns the signature that matches the payload.
-func PayloadSignature(payload []byte, key []byte) string {
-	mac := hmac.New(sha1.New, key)
-	mac.Write(payload)
-	sum := mac.Sum(nil)
-	return "sha1=" + hex.EncodeToString(sum)
-}
-
-func responseHTTPError(w http.ResponseWriter, statusCode int, response string) {
-	logrus.WithFields(logrus.Fields{
-		"response":    response,
-		"status-code": statusCode,
-	}).Info(response)
-	http.Error(w, response, statusCode)
-}
