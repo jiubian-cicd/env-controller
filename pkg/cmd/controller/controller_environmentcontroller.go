@@ -47,6 +47,7 @@ type ControllerEnvironmentOptions struct {
 	Branch                string
 	PushRef               string
 	Labels                map[string]string
+	GitRepositoryOptions   gits.GitRepositoryOptions
 
 	secret                []byte
 }
@@ -94,6 +95,7 @@ func NewCmdControllerEnvironment(commonOpts *opts.CommonOptions) *cobra.Command 
 	cmd.Flags().StringVarP(&options.WebHookURL, "webhook-url", "w", "", "The external WebHook URL of this controller to register with the git provider. If not specified defaults to $WEBHOOK_URL")
 	cmd.Flags().StringVarP(&options.PushRef, "push-ref", "", "refs/heads/master", "The git ref passed from the WebHook which should trigger a new deploy pipeline to trigger. Defaults to only webhooks from the master branch")
 
+	opts.AddGitRepoOptionsArguments(cmd, &options.GitRepositoryOptions)
 	return cmd
 }
 
