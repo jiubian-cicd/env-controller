@@ -223,7 +223,14 @@ func (o *ControllerEnvironmentOptions) getIndex(w http.ResponseWriter, r *http.R
 }
 
 func (o *ControllerEnvironmentOptions) startPipelineRun(w http.ResponseWriter, r *http.Request) {
-	fmt.Sprintf("start pipe line")
+	repos, err := o.Helm().ListRepos()
+	if err != nil {
+		errors.Wrapf(err, "list repo error")
+	}
+	for repo, repoUrl := range repos {
+		fmt.Println(repo + " : " + repoUrl)
+	}
+	fmt.Println("start pipe line")
 }
 
 

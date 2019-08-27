@@ -39,7 +39,7 @@ func NewENVCommand(f clients.Factory, in terminal.FileReader, out terminal.FileW
 	commonOpts := opts.NewCommonOptionsWithTerm(f, in, out, err)
 	rootCommand.Version = "1.0"
 	rootCommand.SetVersionTemplate("{{printf .Version}}\n")
-	rootCommand.AddCommand(controller.NewCmdController(commonOpts))
+	rootCommand.AddCommand(controller.NewCmdController(commonOpts), NewCmdStep(commonOpts))
 
 	return rootCommand
 }

@@ -2,6 +2,8 @@ package opts
 
 import (
 	"fmt"
+	"github.com/jiubian-cicd/env-controller/pkg/helm"
+	"github.com/jiubian-cicd/env-controller/pkg/secreturl"
 	"github.com/spf13/viper"
 	"io"
 	"os"
@@ -13,14 +15,14 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/jiubian-cicd/env-controller/pkg/auth"
+	"github.com/jiubian-cicd/env-controller/pkg/cmd/clients"
+	"github.com/jiubian-cicd/env-controller/pkg/gits"
+	"github.com/jiubian-cicd/env-controller/pkg/util"
 	"github.com/spf13/cobra"
 	"gopkg.in/AlecAivazis/survey.v1"
 	"gopkg.in/AlecAivazis/survey.v1/terminal"
 	gitcfg "gopkg.in/src-d/go-git.v4/config"
-	"github.com/jiubian-cicd/env-controller/pkg/auth"
-	"github.com/jiubian-cicd/env-controller/pkg/util"
-	"github.com/jiubian-cicd/env-controller/pkg/gits"
-	"github.com/jiubian-cicd/env-controller/pkg/cmd/clients"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/jiubian-cicd/env-controller/pkg/kube"
@@ -91,8 +93,10 @@ type CommonOptions struct {
 	NotifyCallback         func(LogLevel, string)
 	kuber                  kube.Kuber
 	git                    gits.Gitter
+	helm                   helm.Helmer
 	factory                clients.Factory
 	kubeClient             kubernetes.Interface
+	secretURLClient        secreturl.Client
 	currentNamespace       string
 	devNamespace           string
 	environmentsDir        string
@@ -233,25 +237,25 @@ func (o *CommonOptions) KubeClientAndDevNamespace() (kubernetes.Interface, strin
 	return kubeClient, o.devNamespace, err
 }
 
-// GetDeployNamespace returns the namespace option from the command line option if defined otherwise we try
-// the $DEPLOY_NAMESPACE environment variable. If none of those are found lets use the current
-// kubernetes namespace value
-//func (o *CommonOptions) GetDeployNamespace(namespaceOption string) (string, error) {
-//	ns := namespaceOption
-//	if ns == "" {
-//		ns = os.Getenv("DEPLOY_NAMESPACE")
-//	}
-//
-//	if ns == "" {
-//		var err error
-//		_, ns, err = o.KubeClientAndNamespace()
-//		if err != nil {
-//			return ns, err
-//		}
-//		fmt.Sprintf("No --namespace option specified or $DEPLOY_NAMESPACE environment variable available so defaulting to using namespace %s", ns)
-//	}
-//	return ns, nil
-//}
+//GetDeployNamespace returns the namespace option from the command line option if defined otherwise we try
+//the $DEPLOY_NAMESPACE environment variable. If none of those are found lets use the current
+//kubernetes namespace value
+func (o *CommonOptions) GetDeployNamespace(namespaceOption string) (string, error) {
+	ns := namespaceOption
+	if ns == "" {
+		ns = os.Getenv("DEPLOY_NAMESPACE")
+	}
+
+	if ns == "" {
+		var err error
+		_, ns, err = o.KubeClientAndNamespace()
+		if err != nil {
+			return ns, err
+		}
+		fmt.Println("No --namespace option specified or $DEPLOY_NAMESPACE environment variable available so defaulting to using namespace %s", ns)
+	}
+	return ns, nil
+}
 
 
 
@@ -273,39 +277,25 @@ func (o *CommonOptions) SetGit(git gits.Gitter) {
 //	o.fakeGitProvider = provider
 //}
 //
-//// NewHelm cerates a new helm client from the given list of parameters
-//func (o *CommonOptions) NewHelm(verbose bool, helmBinary string, noTiller bool, helmTemplate bool) helm.Helmer {
-//	o.helm = o.factory.CreateHelm(o.Verbose, helmBinary, noTiller, helmTemplate)
-//	return o.helm
-//}
-//
+// NewHelm cerates a new helm client from the given list of parameters
+func (o *CommonOptions) NewHelm(verbose bool, helmBinary string, noTiller bool, helmTemplate bool) helm.Helmer {
+	o.helm = o.factory.CreateHelm(o.Verbose, helmBinary, noTiller, helmTemplate)
+	return o.helm
+}
+
 //// Helm returns or creates the helm client
-//func (o *CommonOptions) Helm() helm.Helmer {
-//	if o.helm == nil {
-//		noTillerFlag := os.Getenv("JX_NO_TILLER")
-//		if noTillerFlag == "true" || o.RemoteCluster {
-//			o.EnableRemoteKubeCluster()
-//			if o.helm != nil {
-//				return o.helm
-//			}
-//		}
-//		helmBinary, noTiller, helmTemplate, err := o.TeamHelmBin()
-//		if err != nil {
-//			if noTillerFlag == "true" {
-//				helmTemplate = true
-//			} else {
-//				fmt.Sprintf("Failed to retrieve team settings: %v - falling back to default settings...", err)
-//			}
-//		}
-//		return o.NewHelm(o.Verbose, helmBinary, noTiller, helmTemplate)
-//	}
-//	return o.helm
-//}
-//
-//// SetHelm sets the helmer used for this object
-//func (o *CommonOptions) SetHelm(helmer helm.Helmer) {
-//	o.helm = helmer
-//}
+func (o *CommonOptions) Helm() helm.Helmer {
+	if o.helm == nil {
+		helmBinary := "helm"
+		return o.NewHelm(o.Verbose, helmBinary, false, false)
+	}
+	return o.helm
+}
+
+// SetHelm sets the helmer used for this object
+func (o *CommonOptions) SetHelm(helmer helm.Helmer) {
+	o.helm = helmer
+}
 
 //Kube returns the k8s config client
 func (o *CommonOptions) Kube() kube.Kuber {

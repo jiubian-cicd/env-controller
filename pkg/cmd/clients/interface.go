@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"github.com/jiubian-cicd/env-controller/pkg/helm"
 	"io"
 
 	"github.com/jiubian-cicd/env-controller/pkg/auth"
@@ -59,7 +60,7 @@ type Factory interface {
 
 
 	// CreateHelm creates a new helm client
-	//CreateHelm(verbose bool, helmBinary string, noTiller bool, helmTemplate bool) helm.Helmer
+	CreateHelm(verbose bool, helmBinary string, noTiller bool, helmTemplate bool) helm.Helmer
 
 	//
 	// Kubernetes clients

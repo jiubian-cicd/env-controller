@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/jenkins-x/jx/pkg/util"
+	"github.com/jiubian-cicd/env-controller/pkg/util"
 )
 
 // RunCommandFromDir runs a command in the given directory
