@@ -41,19 +41,13 @@ source:
   token: ""
 
 image:
-  repository: gcr.io/jenkinsxio/builder-maven
-  tag: 0.1.638
+  repository: registry.cn-beijing.aliyuncs.com/jiubian/env-controller
+  tag: latest
 imagePullPolicy: IfNotPresent
 terminationGracePeriodSeconds: 180
 probe:
   livenessPath: /health
   readinessPath: /ready
-command:
-- jx
-args:
-- "controller"
-- "environment"
-- "-b"
 resources:
   limits:
    cpu: 400m
