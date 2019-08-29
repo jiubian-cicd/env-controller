@@ -235,6 +235,16 @@ func (o *ControllerEnvironmentOptions) getIndex(w http.ResponseWriter, r *http.R
 }
 
 
+func (o *ControllerEnvironmentOptions) doGitClone(dir string, url string, w http.ResponseWriter, r *http.Request) (string, error) {
+	runner := &util.Command{
+		Args: []string {"step", "git", "fork-and-clone", "-b", url},
+		Name: "envctl",
+		Dir:  dir,
+	}
+
+	return runner.RunWithoutRetry()
+}
+
 func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWriter, r *http.Request) (string, error) {
 	runner := &util.Command{
 		Args: []string {"step", "helm", "apply"},
@@ -254,26 +264,13 @@ func (o *ControllerEnvironmentOptions) doUpdate(w http.ResponseWriter, r *http.R
 		o.Dir = dir
 	}
 
-	o.BatchMode = true
-	provider, err := o.GitProviderForURL(o.SourceURL, "git username")
+	output, err := o.doGitClone(o.Dir, o.SourceURL, w, r)
 	if err != nil {
-		o.returnError(err, err.Error(), w, r)
-	}
-	dir, baseRef, upstreamInfo, forkInfo, err := gits.ForkAndPullRepo(o.SourceURL, o.Dir, o.Branch, "master", provider, o.Git(), "")
-	if err != nil {
+		log.Logger().Infof("git clone error: %s", output)
 		o.returnError(err, err.Error(), w, r)
 	}
 
-	// Output the directory so it can be used in a script
-	// Must use fmt.Print() as we need to write to stdout
-	fmt.Print(dir)
-
-	if forkInfo != nil {
-		log.Logger().Infof("Forked %s to %s, pulled it into %s and checked out %s", util.ColorInfo(upstreamInfo.HTMLURL), util.ColorInfo(forkInfo.HTMLURL), util.ColorInfo(dir), util.ColorInfo(baseRef))
-	} else {
-		log.Logger().Infof("Pulled %s (%s) into %s", upstreamInfo.URL, baseRef, dir)
-	}
-	output, err := o.doHelmApply(dir, w, r)
+	output, err = o.doHelmApply(o.Dir, w, r)
 	if err != nil {
 		log.Logger().Infof("helm apply error: %s", output)
 		o.returnError(err, err.Error(), w, r)

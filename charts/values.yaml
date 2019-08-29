@@ -39,13 +39,13 @@ source:
   serverUrl: "https://github.com"
   gitKind: "github"
   user: "hw-zhangjiangyu"
-  token: "eb036161d5b2ef98f1c126fde279844d883dae38"
+  token: "d9988a57c8976c156ecf8fd114ff53b19f5fa8f0"
   batchMode: "true"
 
 
 image:
   repository: registry.cn-beijing.aliyuncs.com/jiubian/env-controller
-  tag: 1.0.1
+  tag: 1.0.2
 imagePullPolicy: IfNotPresent
 terminationGracePeriodSeconds: 180
 probe:
