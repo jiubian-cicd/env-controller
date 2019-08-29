@@ -192,6 +192,10 @@ func (o *ControllerEnvironmentOptions) Run() error {
 			return err
 		}
 	}
+	err = o.ensureGitSecret()
+	if err != nil {
+		return err
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/health", http.HandlerFunc(o.health))
@@ -208,6 +212,26 @@ func (o *ControllerEnvironmentOptions) Run() error {
 
 	fmt.Sprintf("Environment Controller is now listening on %s for WebHooks from the source repository %s to trigger promotions", util.ColorInfo(util.UrlJoin(o.WebHookURL, o.Path)), util.ColorInfo(o.SourceURL))
 	return http.ListenAndServe(":"+strconv.Itoa(o.Port), mux)
+}
+
+func (o *ControllerEnvironmentOptions) ensureGitSecret() error {
+	authConfigSvc, err := o.CreateGitAuthConfigService()
+	if err != nil {
+		return err
+	}
+	config := authConfigSvc.Config()
+	gitInfo, err := gits.ParseGitURL(o.SourceURL)
+	u := gitInfo.HostURL()
+	server := config.GetOrCreateServer(u)
+	user, err := o.PickPipelineUserAuth(config, server)
+	if err != nil {
+		return err
+	}
+	_, err = o.UpdatePipelineGitCredentialsSecret(server, user)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // health returns either HTTP 204 if the service is healthy, otherwise nothing ('cos it's dead).

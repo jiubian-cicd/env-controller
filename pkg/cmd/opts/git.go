@@ -3,19 +3,20 @@ package opts
 import (
 	"fmt"
 	"github.com/jiubian-cicd/env-controller/pkg/gits/features"
+	"github.com/jiubian-cicd/env-controller/pkg/kube/naming"
+	"github.com/jiubian-cicd/env-controller/pkg/util"
 	"io/ioutil"
 	"os"
 
-
-
 	"github.com/jiubian-cicd/env-controller/pkg/auth"
 	"github.com/jiubian-cicd/env-controller/pkg/gits"
+	"github.com/jiubian-cicd/env-controller/pkg/issues"
+	"github.com/jiubian-cicd/env-controller/pkg/kube"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	gitcfg "gopkg.in/src-d/go-git.v4/config"
-	corev1 "k8s.io/api/core/v1"
-	"github.com/jiubian-cicd/env-controller/pkg/issues"
-	"github.com/jiubian-cicd/env-controller/pkg/kube"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // FindGitInfo parses the git information from the given directory
@@ -79,121 +80,65 @@ func (o *CommonOptions) CreateGitProvider(dir string) (*gits.GitRepository, gits
 	return gitInfo, gitProvider, nil, nil
 }
 //
-//// UpdatePipelineGitCredentialsSecret updates the pipeline git credentials in a kubernetes secret
-//func (o *CommonOptions) UpdatePipelineGitCredentialsSecret(server *auth.AuthServer, userAuth *auth.UserAuth) (string, error) {
-//	client, curNs, err := o.KubeClientAndNamespace()
-//	if err != nil {
-//		return "", err
-//	}
-//	ns :=  curNs
-//	if err != nil {
-//		return "", err
-//	}
-//	options := metav1.GetOptions{}
-//	serverName := server.Name
-//	name := naming.ToValidName(kube.SecretJenkinsPipelineGitCredentials + server.Kind + "-" + serverName)
-//	secrets := client.CoreV1().Secrets(ns)
-//	secret, err := secrets.Get(name, options)
-//	create := false
-//	operation := "update"
-//	labels := map[string]string{
-//		kube.LabelCredentialsType: kube.ValueCredentialTypeUsernamePassword,
-//		kube.LabelCreatedBy:       kube.ValueCreatedByJX,
-//		kube.LabelKind:            kube.ValueKindGit,
-//		kube.LabelServiceKind:     server.Kind,
-//	}
-//	annotations := map[string]string{
-//		kube.AnnotationCredentialsDescription: fmt.Sprintf("API Token for acccessing %s Git service inside pipelines", server.URL),
-//		kube.AnnotationURL:                    server.URL,
-//		kube.AnnotationName:                   serverName,
-//	}
-//	if err != nil {
-//		// lets create a new secret
-//		create = true
-//		operation = "create"
-//		secret = &v1.Secret{
-//			ObjectMeta: metav1.ObjectMeta{
-//				Name:        name,
-//				Annotations: annotations,
-//				Labels:      labels,
-//			},
-//			Data: map[string][]byte{},
-//		}
-//	} else {
-//		secret.Annotations = util.MergeMaps(secret.Annotations, annotations)
-//		secret.Labels = util.MergeMaps(secret.Labels, labels)
-//	}
-//	if userAuth.Username != "" {
-//		secret.Data["username"] = []byte(userAuth.Username)
-//	}
-//	if userAuth.ApiToken != "" {
-//		secret.Data["password"] = []byte(userAuth.ApiToken)
-//	}
-//	if create {
-//		_, err = secrets.Create(secret)
-//	}
-//	if err != nil {
-//		return name, fmt.Errorf("Failed to %s secret %s due to %s", operation, secret.Name, err)
-//	}
-//
-//	prow, err := o.IsProw()
-//	if err != nil {
-//		return name, err
-//	}
-//	if prow {
-//		return name, nil
-//	}
-//
-//	// update the Jenkins config
-//	cm, err := client.CoreV1().ConfigMaps(ns).Get(kube.ConfigMapJenkinsX, metav1.GetOptions{})
-//	if err != nil {
-//		return name, fmt.Errorf("Could not load Jenkins ConfigMap: %s", err)
-//	}
-//
-//	updated, err := kube.UpdateJenkinsGitServers(cm, server, userAuth, name)
-//	if err != nil {
-//		return name, err
-//	}
-//	if updated {
-//		_, err = client.CoreV1().ConfigMaps(ns).Update(cm)
-//		if err != nil {
-//			return name, fmt.Errorf("Failed to update Jenkins ConfigMap: %s", err)
-//		}
-//		log.Logger().Infof("Updated the Jenkins ConfigMap %s", kube.ConfigMapJenkinsX)
-//
-//		// wait a little bit to give k8s chance to sync the ConfigMap to the file system
-//		time.Sleep(time.Second * 2)
-//
-//		// lets ensure that the git server + credential is in the Jenkins server configuration
-//		jenk, err := o.JenkinsClient()
-//		if err != nil {
-//			return name, err
-//		}
-//		// TODO reload does not seem to reload the plugin content
-//		//err = jenk.Reload()
-//		err = jenk.SafeRestart()
-//		if err != nil {
-//			log.Logger().Warnf("Failed to safe restart Jenkins after configuration change %s", err)
-//		} else {
-//			log.Logger().Info("Safe Restarted Jenkins server")
-//
-//			// Let's wait 5 minutes for Jenkins to come back up.
-//			// This is kinda gross, but it's just polling Jenkins every second for 5 minutes.
-//			timeout := time.Duration(5) * time.Minute
-//			start := int64(time.Now().Nanosecond())
-//			for int64(time.Now().Nanosecond())-start < timeout.Nanoseconds() {
-//				_, err := jenk.GetJobs()
-//				if err == nil {
-//					break
-//				}
-//				log.Logger().Info("Jenkins returned an error. Waiting for it to recover...")
-//				time.Sleep(1 * time.Second)
-//			}
-//		}
-//	}
-//
-//	return name, nil
-//}
+// UpdatePipelineGitCredentialsSecret updates the pipeline git credentials in a kubernetes secret
+func (o *CommonOptions) UpdatePipelineGitCredentialsSecret(server *auth.AuthServer, userAuth *auth.UserAuth) (string, error) {
+	client, curNs, err := o.KubeClientAndNamespace()
+	if err != nil {
+		return "", err
+	}
+	ns :=  curNs
+	if err != nil {
+		return "", err
+	}
+	options := metav1.GetOptions{}
+	serverName := server.Name
+	name := naming.ToValidName(kube.SecretJenkinsPipelineGitCredentials + server.Kind + "-" + serverName)
+	secrets := client.CoreV1().Secrets(ns)
+	secret, err := secrets.Get(name, options)
+	create := false
+	operation := "update"
+	labels := map[string]string{
+		kube.LabelCredentialsType: kube.ValueCredentialTypeUsernamePassword,
+		kube.LabelCreatedBy:       kube.ValueCreatedByJX,
+		kube.LabelKind:            kube.ValueKindGit,
+		kube.LabelServiceKind:     server.Kind,
+	}
+	annotations := map[string]string{
+		kube.AnnotationCredentialsDescription: fmt.Sprintf("API Token for acccessing %s Git service inside pipelines", server.URL),
+		kube.AnnotationURL:                    server.URL,
+		kube.AnnotationName:                   serverName,
+	}
+	if err != nil {
+		// lets create a new secret
+		create = true
+		operation = "create"
+		secret = &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Annotations: annotations,
+				Labels:      labels,
+			},
+			Data: map[string][]byte{},
+		}
+	} else {
+		secret.Annotations = util.MergeMaps(secret.Annotations, annotations)
+		secret.Labels = util.MergeMaps(secret.Labels, labels)
+	}
+	if userAuth.Username != "" {
+		secret.Data["username"] = []byte(userAuth.Username)
+	}
+	if userAuth.ApiToken != "" {
+		secret.Data["password"] = []byte(userAuth.ApiToken)
+	}
+	if create {
+		_, err = secrets.Create(secret)
+	}
+	if err != nil {
+		return name, fmt.Errorf("Failed to %s secret %s due to %s", operation, secret.Name, err)
+	}
+
+	return name, nil
+}
 
 // EnsureGitServiceCRD ensure that the GitService CRD is installed
 func (o *CommonOptions) EnsureGitServiceCRD(server *auth.AuthServer) error {
@@ -345,24 +290,24 @@ func (o *CommonOptions) GetPipelineGitAuth() (*auth.AuthServer, *auth.UserAuth, 
 	server, user := authConfig.GetPipelineAuth()
 	return server, user, nil
 }
-
-// FindGitCredentials finds the credential name from the pipeline git Secrets
-func FindGitCredentials(gitProvider gits.GitProvider, secrets *corev1.SecretList) string {
-	if secrets == nil {
-		return ""
-	}
-	u := gitProvider.ServerURL()
-	for _, secret := range secrets.Items {
-		annotations := secret.Annotations
-		if annotations != nil {
-			gitUrl := annotations[kube.AnnotationURL]
-			if u == gitUrl {
-				return secret.Name
-			}
-		}
-	}
-	return ""
-}
+//
+//// FindGitCredentials finds the credential name from the pipeline git Secrets
+//func FindGitCredentials(gitProvider gits.GitProvider, secrets *corev1.SecretList) string {
+//	if secrets == nil {
+//		return ""
+//	}
+//	u := gitProvider.ServerURL()
+//	for _, secret := range secrets.Items {
+//		annotations := secret.Annotations
+//		if annotations != nil {
+//			gitUrl := annotations[kube.AnnotationURL]
+//			if u == gitUrl {
+//				return secret.Name
+//			}
+//		}
+//	}
+//	return ""
+//}
 
 // DisableFeatures iterates over all the repositories in org (except those that match excludes) and disables issue
 // trackers, projects and wikis if they are not in use.
