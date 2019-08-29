@@ -3,23 +3,25 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jiubian-cicd/env-controller/pkg/log"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-	"github.com/spf13/cobra"
-	"github.com/pkg/errors"
 
 	"github.com/jiubian-cicd/env-controller/pkg/cmd/helper"
-	"github.com/jiubian-cicd/env-controller/pkg/cmd/templates"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"github.com/jiubian-cicd/env-controller/pkg/util"
 	"github.com/jiubian-cicd/env-controller/pkg/cmd/opts"
+	"github.com/jiubian-cicd/env-controller/pkg/cmd/templates"
 	"github.com/jiubian-cicd/env-controller/pkg/gits"
 	"github.com/jiubian-cicd/env-controller/pkg/kube/services"
+	"github.com/jiubian-cicd/env-controller/pkg/util"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -46,6 +48,7 @@ type ControllerEnvironmentOptions struct {
 	WebHookURL            string
 	Branch                string
 	PushRef               string
+	Dir                   string
 	Labels                map[string]string
 	GitRepositoryOptions   gits.GitRepositoryOptions
 
@@ -94,6 +97,7 @@ func NewCmdControllerEnvironment(commonOpts *opts.CommonOptions) *cobra.Command 
 	cmd.Flags().StringVarP(&options.GitRepo, "repo", "", "", "The git repository name. If not specified defaults to $REPO")
 	cmd.Flags().StringVarP(&options.WebHookURL, "webhook-url", "w", "", "The external WebHook URL of this controller to register with the git provider. If not specified defaults to $WEBHOOK_URL")
 	cmd.Flags().StringVarP(&options.PushRef, "push-ref", "", "refs/heads/master", "The git ref passed from the WebHook which should trigger a new deploy pipeline to trigger. Defaults to only webhooks from the master branch")
+	cmd.Flags().StringVarP(&options.Dir, "dir", "", "", "The directory in which the git repo is checked out, by default the working directory")
 
 	opts.AddGitRepoOptionsArguments(cmd, &options.GitRepositoryOptions)
 	return cmd
@@ -165,7 +169,7 @@ func (o *ControllerEnvironmentOptions) Run() error {
 	if o.SourceURL == "" {
 		o.SourceURL = util.UrlJoin(o.GitServerURL, o.GitOwner, o.GitRepo)
 	}
-	fmt.Sprintf("using environment source directory %s and external webhook URL: %s", util.ColorInfo(o.SourceURL), util.ColorInfo(o.WebHookURL))
+	log.Logger().Infof("using environment source directory %s and external webhook URL: %s", util.ColorInfo(o.SourceURL), util.ColorInfo(o.WebHookURL))
 	o.secret, err = o.loadOrCreateHmacSecret()
 	if err != nil {
 		return errors.Wrapf(err, "loading hmac secret")
@@ -217,20 +221,65 @@ func (o *ControllerEnvironmentOptions) ready(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+func (o *ControllerEnvironmentOptions) returnError(err error, message string, w http.ResponseWriter, r *http.Request) {
+	log.Logger().Errorf("returning error: %v %s", err, message)
+	responseHTTPError(w, http.StatusInternalServerError, "500 Internal Error: "+message+" "+err.Error())
+}
+
 // getIndex returns a simple home page
 func (o *ControllerEnvironmentOptions) getIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(helloMessage))
 }
 
-func (o *ControllerEnvironmentOptions) startPipelineRun(w http.ResponseWriter, r *http.Request) {
-	repos, err := o.Helm().ListRepos()
+
+func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWriter, r *http.Request) (string, error) {
+	runner := &util.Command{
+		Args: []string {"step", "helm", "apply"},
+		Name: "envctl",
+		Dir:  dir,
+	}
+
+	return runner.RunWithoutRetry()
+}
+
+func (o *ControllerEnvironmentOptions) doUpdate(w http.ResponseWriter, r *http.Request) {
+	if o.Dir == "" {
+		dir, err := os.Getwd()
+		if err != nil {
+			o.returnError(err, err.Error(), w, r)
+		}
+		o.Dir = dir
+	}
+
+	o.BatchMode = true
+	provider, err := o.GitProviderForURL(o.SourceURL, "git username")
 	if err != nil {
-		errors.Wrapf(err, "list repo error")
+		o.returnError(err, err.Error(), w, r)
 	}
-	for repo, repoUrl := range repos {
-		fmt.Println(repo + " : " + repoUrl)
+	dir, baseRef, upstreamInfo, forkInfo, err := gits.ForkAndPullRepo(o.SourceURL, o.Dir, o.Branch, "master", provider, o.Git(), "")
+	if err != nil {
+		o.returnError(err, err.Error(), w, r)
 	}
-	fmt.Println("start pipe line")
+
+	// Output the directory so it can be used in a script
+	// Must use fmt.Print() as we need to write to stdout
+	fmt.Print(dir)
+
+	if forkInfo != nil {
+		log.Logger().Infof("Forked %s to %s, pulled it into %s and checked out %s", util.ColorInfo(upstreamInfo.HTMLURL), util.ColorInfo(forkInfo.HTMLURL), util.ColorInfo(dir), util.ColorInfo(baseRef))
+	} else {
+		log.Logger().Infof("Pulled %s (%s) into %s", upstreamInfo.URL, baseRef, dir)
+	}
+	output, err := o.doHelmApply(dir, w, r)
+	if err != nil {
+		log.Logger().Infof("helm apply error: %s", output)
+		o.returnError(err, err.Error(), w, r)
+	}
+	w.Write([]byte("OK"))
+}
+
+func (o *ControllerEnvironmentOptions) startPipelineRun(w http.ResponseWriter, r *http.Request) {
+	o.doUpdate(w,r)
 }
 
 
@@ -423,3 +472,11 @@ func (o *ControllerEnvironmentOptions) registerWebHook(webhookURL string, secret
 	return nil
 }
 
+
+func responseHTTPError(w http.ResponseWriter, statusCode int, response string) {
+	logrus.WithFields(logrus.Fields{
+		"response":    response,
+		"status-code": statusCode,
+	}).Info(response)
+	http.Error(w, response, statusCode)
+}
