@@ -37,6 +37,8 @@ spec:
           value: "{{ .Values.source.owner }}"
         - name: "REPO"
           value: "{{ .Values.source.repo }}"
+        - name: "BATCH_MODE"
+          value: "{{ .Values.source.batchMode }}"
         - name: "PROJECT_ID"
           value: "{{ .Values.projectId }}"
         - name: "BUILD_PACK_URL"

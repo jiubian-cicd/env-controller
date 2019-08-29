@@ -24,6 +24,7 @@ buildPackRef: ""
 # the webhook URL to expose this service
 webhookUrl: ""
 
+
 # lets only watch the local namespace for tekton and avoid the tekton webhook component
 tekton:
   webhook:
@@ -33,16 +34,18 @@ tekton:
 
 # the git source repository of the environment used for GitOps promotion
 source:
-  owner: ""
-  repo: ""
+  owner: "hw-zhangjiangyu"
+  repo: "shenzhen-env"
   serverUrl: "https://github.com"
   gitKind: "github"
-  user: ""
-  token: ""
+  user: "hw-zhangjiangyu"
+  token: "eb036161d5b2ef98f1c126fde279844d883dae38"
+  batchMode: "true"
+
 
 image:
   repository: registry.cn-beijing.aliyuncs.com/jiubian/env-controller
-  tag: latest
+  tag: 1.0.1
 imagePullPolicy: IfNotPresent
 terminationGracePeriodSeconds: 180
 probe:

@@ -132,6 +132,9 @@ func (o *ControllerEnvironmentOptions) Run() error {
 			return util.MissingOption("git-server-url")
 		}
 	}
+
+	o.BatchMode = os.Getenv("BATCH_MODE") == "true"
+
 	if o.GitKind == "" {
 		o.GitKind = os.Getenv("GIT_KIND")
 		if o.GitKind == "" {
