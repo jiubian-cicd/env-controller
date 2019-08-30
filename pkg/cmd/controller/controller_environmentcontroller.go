@@ -185,6 +185,11 @@ func (o *ControllerEnvironmentOptions) Run() error {
 		}
 	}
 
+	err = o.ensureGitSecret()
+	if err != nil {
+		return err
+	}
+
 	if !o.NoRegisterWebHook {
 		fullWebHookURL := util.UrlJoin(o.WebHookURL, o.Path)
 		err = o.registerWebHook(fullWebHookURL, o.secret)
@@ -192,10 +197,7 @@ func (o *ControllerEnvironmentOptions) Run() error {
 			return err
 		}
 	}
-	err = o.ensureGitSecret()
-	if err != nil {
-		return err
-	}
+
 
 	mux := http.NewServeMux()
 	mux.Handle("/health", http.HandlerFunc(o.health))
