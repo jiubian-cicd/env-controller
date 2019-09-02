@@ -301,7 +301,7 @@ func (o *ControllerEnvironmentOptions) doHelmServe(dir string) (string, error){
 
 func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWriter, r *http.Request) (string, error) {
 	runner := &util.Command{
-		Args: []string {"step", "helm", "apply"},
+		Args: []string {"step", "helm", "apply", "-d", "env"},
 		Name: "envctl",
 		Dir:  dir,
 	}
