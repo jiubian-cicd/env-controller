@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -301,9 +302,9 @@ func (o *ControllerEnvironmentOptions) doHelmServe(dir string) (string, error){
 
 func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWriter, r *http.Request) (string, error) {
 	runner := &util.Command{
-		Args: []string {"step", "helm", "apply", "-d", "env"},
+		Args: []string {"step", "helm", "apply"},
 		Name: "envctl",
-		Dir:  dir,
+		Dir:  filepath.Join(dir, "env"),
 	}
 
 	return runner.RunWithoutRetry()
