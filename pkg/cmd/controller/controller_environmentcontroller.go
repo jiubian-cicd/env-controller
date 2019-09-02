@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -199,9 +200,10 @@ func (o *ControllerEnvironmentOptions) Run() error {
 	}
 	output, err := o.doHelmServe(o.Dir)
 	if err != nil {
-		log.Logger().Errorln("do helm serve error : %s", output)
+		log.Logger().Errorln("do helm serve error :", output)
 		return err
 	}
+	log.Logger().Infof("helm server output: ", output)
 
 	mux := http.NewServeMux()
 	mux.Handle("/health", http.HandlerFunc(o.health))
@@ -281,11 +283,20 @@ func (o *ControllerEnvironmentOptions) doGitClone(dir string, url string, w http
 
 func (o *ControllerEnvironmentOptions) doHelmServe(dir string) (string, error){
 	runner := &util.Command{
-		Args: []string {"serve"},
+		Args: []string {"init"},
 		Name: "helm",
 		Dir: dir,
 	}
-	return runner.Run()
+	output ,err := runner.Run()
+	log.Logger().Infof(output)
+	if err != nil {
+		log.Logger().Errorf("helm init error. ", err.Error())
+	}
+
+	cmd := exec.Command("helm", "serve")
+	cmd.Start()
+	fmt.Println("-----------helm serve------")
+	return "", nil
 }
 
 func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWriter, r *http.Request) (string, error) {
