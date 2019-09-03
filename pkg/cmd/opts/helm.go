@@ -222,10 +222,10 @@ func (o *CommonOptions) InitHelm(config InitHelmConfig) error {
 		}
 	}
 
-	err = o.Helm().AddRepo("jenkins-x", kube.DefaultChartMuseumURL, "", "")
-	if err != nil {
-		return err
-	}
+	//err = o.Helm().AddRepo("jenkins-x", kube.DefaultChartMuseumURL, "", "")
+	//if err != nil {
+	//	return err
+	//}
 	fmt.Sprintf("helm installed and configured")
 
 	return nil
@@ -912,7 +912,7 @@ func (o *CommonOptions) HelmInitRecursiveDependencyBuild(dir string, chartRepos 
 func (o *CommonOptions) DefaultReleaseCharts() []string {
 	releasesURL := o.ReleaseChartMuseumUrl()
 	answer := []string{
-		kube.DefaultChartMuseumURL,
+		//kube.DefaultChartMuseumURL,
 	}
 	if releasesURL != "" {
 		answer = append(answer, releasesURL)
