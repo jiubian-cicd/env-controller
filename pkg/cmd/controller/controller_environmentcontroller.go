@@ -209,6 +209,7 @@ func (o *ControllerEnvironmentOptions) Run() error {
 	mux := http.NewServeMux()
 	mux.Handle("/health", http.HandlerFunc(o.health))
 	mux.Handle("/ready", http.HandlerFunc(o.ready))
+	mux.Handle("/hello", http.HandlerFunc(o.hello))
 
 	indexPaths := []string{"/", "/index.html"}
 	for _, p := range indexPaths {
@@ -259,6 +260,10 @@ func (o *ControllerEnvironmentOptions) ready(w http.ResponseWriter, r *http.Requ
 	} else {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
+}
+
+func (o *ControllerEnvironmentOptions) hello(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("hello 1111"))
 }
 
 func (o *ControllerEnvironmentOptions) returnError(err error, message string, w http.ResponseWriter, r *http.Request) {
