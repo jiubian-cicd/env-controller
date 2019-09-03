@@ -7,4 +7,5 @@
 target
 work
 bin/
-charts/values.yaml
+charts/env-controller/values.yaml
+charts/env-controller/*.tgz
