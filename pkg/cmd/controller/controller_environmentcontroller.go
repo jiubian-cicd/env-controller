@@ -224,6 +224,16 @@ func (o *ControllerEnvironmentOptions) Run() error {
 	return http.ListenAndServe(":"+strconv.Itoa(o.Port), mux)
 }
 
+func (o *ControllerEnvironmentOptions) ensureGitCrendentials(userName string, apiToken string, host string) error {
+	userHome , err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	data := "http://" + userName + ":" + apiToken + "@" + host
+	fileName := filepath.Join(userHome, ".git-credentials")
+	return ioutil.WriteFile(fileName, []byte(data), util.DefaultWritePermissions)
+}
+
 func (o *ControllerEnvironmentOptions) ensureGitSecret() error {
 	authConfigSvc, err := o.CreateGitAuthConfigService()
 	if err != nil {
@@ -252,6 +262,11 @@ func (o *ControllerEnvironmentOptions) ensureGitSecret() error {
 	err = authConfigSvc.SaveConfig()
 	if err != nil {
 		return err
+	}
+
+	err = o.ensureGitCrendentials(userAuth.Username, userAuth.ApiToken, gitInfo.Host)
+	if err != nil {
+		return  err
 	}
 	return nil
 }
