@@ -505,12 +505,12 @@ func (o *ControllerEnvironmentOptions) marshalPayload(w http.ResponseWriter, r *
 
 // handle request for pipeline runs
 func (o *ControllerEnvironmentOptions) handleWebHookRequests(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		// liveness probe etc
-		fmt.Sprintf("webhook handler not post mothod")
-		o.getIndex(w, r)
-		return
-	}
+	//if r.Method != http.MethodPost {
+	//	// liveness probe etc
+	//	fmt.Sprintf("webhook handler not post mothod")
+	//	o.getIndex(w, r)
+	//	return
+	//}
 
 	go o.startPipelineRun(w, r)
 }
