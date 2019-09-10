@@ -7,6 +7,7 @@ import (
 	"github.com/jiubian-cicd/env-controller/pkg/util"
 	"io/ioutil"
 	"os"
+	. "strings"
 
 	"github.com/jiubian-cicd/env-controller/pkg/auth"
 	"github.com/jiubian-cicd/env-controller/pkg/gits"
@@ -216,7 +217,11 @@ func (o *CommonOptions) GitServerKind(gitInfo *gits.GitRepository) (string, erro
 
 // GitServerHostURLKind returns the kind of git server host URL
 func (o *CommonOptions) GitServerHostURLKind(hostURL string) (string, error) {
-	return "github", nil
+	if Contains(hostURL, "github") {
+		return "github", nil
+	} else {
+		return "gitlab", nil
+	}
 }
 
 // GitProviderForURL returns a GitProvider for the given git URL

@@ -232,7 +232,11 @@ func (o *ControllerEnvironmentOptions) ensureGitSecret() error {
 	config := authConfigSvc.Config()
 	gitInfo, err := gits.ParseGitURL(o.SourceURL)
 	u := gitInfo.HostURL()
-	userAuth := auth.CreateAuthUserFromEnvironment("GITHUB")
+	prefix := "GITLAB"
+	if o.GitKind == "github" {
+		prefix = "GITHUB"
+	}
+	userAuth := auth.CreateAuthUserFromEnvironment(prefix)
 	config.Servers = []*auth.AuthServer{
 		{
 			Name:  "Git",
@@ -242,6 +246,10 @@ func (o *ControllerEnvironmentOptions) ensureGitSecret() error {
 	}
 	server := config.GetOrCreateServer(u)
 	_, err = o.UpdatePipelineGitCredentialsSecret(server, &userAuth)
+	if err != nil {
+		return err
+	}
+	err = authConfigSvc.SaveConfig()
 	if err != nil {
 		return err
 	}
