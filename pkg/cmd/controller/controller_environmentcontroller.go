@@ -218,6 +218,7 @@ func (o *ControllerEnvironmentOptions) Run() error {
 		}
 	}
 
+	mux.Handle("/pushenv", http.HandlerFunc(o.doEnvGitUpdate))
 	mux.Handle(o.Path, http.HandlerFunc(o.handleWebHookRequests))
 
 	fmt.Sprintf("Environment Controller is now listening on %s for WebHooks from the source repository %s to trigger promotions", util.ColorInfo(util.UrlJoin(o.WebHookURL, o.Path)), util.ColorInfo(o.SourceURL))
@@ -299,6 +300,14 @@ func (o *ControllerEnvironmentOptions) getIndex(w http.ResponseWriter, r *http.R
 	w.Write([]byte(helloMessage))
 }
 
+func (o *ControllerEnvironmentOptions) doGitApplyRelease(dir string, chartName string, version string) (string, error) {
+	runner := &util.Command{
+		Args: []string {"cmd/update_version.sh", chartName, version},
+		Name: "bash",
+		Dir:  dir,
+	}
+	return runner.RunWithoutRetry()
+}
 
 func (o *ControllerEnvironmentOptions) doGitClone(dir string, url string, w http.ResponseWriter, r *http.Request) (string, error) {
 	runner := &util.Command{
@@ -336,6 +345,36 @@ func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWr
 	}
 
 	return runner.RunWithoutRetry()
+}
+
+func (o *ControllerEnvironmentOptions) doEnvGitUpdate(w http.ResponseWriter, r *http.Request) {
+	if o.Dir == "" {
+		dir, err := os.Getwd()
+		if err != nil {
+			o.returnError(err, err.Error(), w, r)
+		}
+		o.Dir = dir
+	}
+	output, err := o.doGitClone(o.Dir, o.SourceURL, w, r)
+	if err != nil {
+		log.Logger().Infof("git clone error: %s", output)
+		o.returnError(err, err.Error(), w, r)
+	}
+
+	query := r.URL.Query()
+
+	chartName := query.Get("chart_name")
+	if "" == chartName {
+		log.Logger().Infof("chart_name is required")
+		responseHTTPError(w, http.StatusInternalServerError, "500 Internal Error: "+ "chart_name is required")
+	}
+	releaseVersion := query.Get("release_version")
+	if "" == releaseVersion {
+		log.Logger().Infof("release_version is required")
+		responseHTTPError(w, http.StatusInternalServerError, "500 Internal Error: "+ "chart_name is required")
+	}
+
+	o.doGitApplyRelease(o.Dir, chartName, releaseVersion)
 }
 
 func (o *ControllerEnvironmentOptions) doUpdate(w http.ResponseWriter, r *http.Request) {
