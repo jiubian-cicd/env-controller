@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -309,6 +310,37 @@ func (o *ControllerEnvironmentOptions) doGitApplyRelease(dir string, chartName s
 	return runner.RunWithoutRetry()
 }
 
+func (o *ControllerEnvironmentOptions) doGitPush(dir string) (string, error) {
+	runner := &util.Command{
+		Args: []string {"add env/requirements.yaml"},
+		Name: "git",
+		Dir:  dir,
+	}
+	output, err := runner.RunWithoutRetry()
+	if err != nil {
+		return output, err
+	}
+
+	runner = &util.Command{
+		Args: []string {"commit -m \"Auto commit, Update env/requirements.yaml\""},
+		Name: "git",
+		Dir:  dir,
+	}
+	output, err = runner.RunWithoutRetry()
+	if err != nil {
+		return output, err
+	}
+
+	runner = &util.Command{
+		Args: []string {"commit push origin master"},
+		Name: "git",
+		Dir:  dir,
+	}
+	output, err = runner.RunWithoutRetry()
+
+	return output, err
+}
+
 func (o *ControllerEnvironmentOptions) doGitClone(dir string, url string, w http.ResponseWriter, r *http.Request) (string, error) {
 	runner := &util.Command{
 		Args: []string {"step", "git", "fork-and-clone", "-b", url},
@@ -347,6 +379,17 @@ func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWr
 	return runner.RunWithoutRetry()
 }
 
+func (o *ControllerEnvironmentOptions) clearDir(dir string) error {
+	names, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entery := range names {
+		os.RemoveAll(path.Join([]string{dir, entery.Name()}...))
+	}
+	return nil
+}
+
 func (o *ControllerEnvironmentOptions) doEnvGitUpdate(w http.ResponseWriter, r *http.Request) {
 	if o.Dir == "" {
 		dir, err := os.Getwd()
@@ -355,7 +398,17 @@ func (o *ControllerEnvironmentOptions) doEnvGitUpdate(w http.ResponseWriter, r *
 		}
 		o.Dir = dir
 	}
-	output, err := o.doGitClone(o.Dir, o.SourceURL, w, r)
+
+	dir := filepath.Join(o.Dir, "tmp")
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			os.Mkdir(dir, util.DefaultWritePermissions)
+		} else {
+			o.clearDir(dir)
+		}
+	}
+
+	output, err := o.doGitClone(dir, o.SourceURL, w, r)
 	if err != nil {
 		log.Logger().Infof("git clone error: %s", output)
 		o.returnError(err, err.Error(), w, r)
@@ -371,10 +424,21 @@ func (o *ControllerEnvironmentOptions) doEnvGitUpdate(w http.ResponseWriter, r *
 	releaseVersion := query.Get("release_version")
 	if "" == releaseVersion {
 		log.Logger().Infof("release_version is required")
-		responseHTTPError(w, http.StatusInternalServerError, "500 Internal Error: "+ "chart_name is required")
+		responseHTTPError(w, http.StatusInternalServerError, "500 Internal Error: "+ "release_version is required")
 	}
 
-	o.doGitApplyRelease(o.Dir, chartName, releaseVersion)
+	output, err = o.doGitApplyRelease(dir, chartName, releaseVersion)
+	if err != nil {
+		log.Logger().Infof("update version failed. %s", output)
+		o.returnError(err, err.Error(), w, r)
+	}
+
+	output, err = o.doGitPush(dir)
+	if err != nil {
+		log.Logger().Infof("push env git failed. %s", output)
+		o.returnError(err, err.Error(), w, r)
+	}
+	w.Write([]byte("OK"))
 }
 
 func (o *ControllerEnvironmentOptions) doUpdate(w http.ResponseWriter, r *http.Request) {
