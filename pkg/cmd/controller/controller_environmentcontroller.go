@@ -312,7 +312,7 @@ func (o *ControllerEnvironmentOptions) doGitApplyRelease(dir string, chartName s
 
 func (o *ControllerEnvironmentOptions) doGitPush(dir string) (string, error) {
 	runner := &util.Command{
-		Args: []string {"add env/requirements.yaml"},
+		Args: []string {"add" , "env/requirements.yaml"},
 		Name: "git",
 		Dir:  dir,
 	}
@@ -322,7 +322,7 @@ func (o *ControllerEnvironmentOptions) doGitPush(dir string) (string, error) {
 	}
 
 	runner = &util.Command{
-		Args: []string {"commit -m \"Auto commit, Update env/requirements.yaml\""},
+		Args: []string {"commit",  "-m", "Auto commit, Update env/requirements.yaml"},
 		Name: "git",
 		Dir:  dir,
 	}
@@ -332,7 +332,7 @@ func (o *ControllerEnvironmentOptions) doGitPush(dir string) (string, error) {
 	}
 
 	runner = &util.Command{
-		Args: []string {"commit push origin master"},
+		Args: []string {"push", "origin", "master"},
 		Name: "git",
 		Dir:  dir,
 	}
