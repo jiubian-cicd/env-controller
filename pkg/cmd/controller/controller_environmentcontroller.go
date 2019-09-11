@@ -312,11 +312,25 @@ func (o *ControllerEnvironmentOptions) doGitApplyRelease(dir string, chartName s
 
 func (o *ControllerEnvironmentOptions) doGitPush(dir string) (string, error) {
 	runner := &util.Command{
-		Args: []string {"add" , "env/requirements.yaml"},
+		Args: []string {"diff" , "--name-only"},
 		Name: "git",
 		Dir:  dir,
 	}
 	output, err := runner.RunWithoutRetry()
+	if err != nil {
+		return output, err
+	}
+
+	if !strings.Contains(output, "env/requirements.yaml") {
+		return "no change", nil
+	}
+
+	runner = &util.Command{
+		Args: []string {"add" , "env/requirements.yaml"},
+		Name: "git",
+		Dir:  dir,
+	}
+	output, err = runner.RunWithoutRetry()
 	if err != nil {
 		return output, err
 	}
