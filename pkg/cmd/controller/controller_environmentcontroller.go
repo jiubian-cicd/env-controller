@@ -222,6 +222,7 @@ func (o *ControllerEnvironmentOptions) Run() error {
 	}
 
 	mux.Handle("/pushenv", http.HandlerFunc(o.doEnvGitUpdate))
+	fmt.Sprintf("handleWebHookRequests for path %s", o.Path)
 	mux.Handle(o.Path, http.HandlerFunc(o.handleWebHookRequests))
 
 	fmt.Sprintf("Environment Controller using aliyun code mode %t", o.AliyunCode)
