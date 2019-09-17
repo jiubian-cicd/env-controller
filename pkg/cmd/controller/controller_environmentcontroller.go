@@ -221,13 +221,15 @@ func (o *ControllerEnvironmentOptions) Run() error {
 		}
 	}
 
+	o.AliyunCode = os.Getenv("ALIYUN_CODE") == "true"
+
 	mux.Handle("/pushenv", http.HandlerFunc(o.doEnvGitUpdate))
-	fmt.Sprintf("handleWebHookRequests for path %s", o.Path)
+	log.Logger().Infof("handleWebHookRequests for path %s", o.Path)
 	mux.Handle(o.Path, http.HandlerFunc(o.handleWebHookRequests))
 
-	fmt.Sprintf("Environment Controller using aliyun code mode %t", o.AliyunCode)
+	log.Logger().Infof("Environment Controller using aliyun code mode %t", o.AliyunCode)
 
-	fmt.Sprintf("Environment Controller is now listening on %s for WebHooks from the source repository %s to trigger promotions", util.ColorInfo(util.UrlJoin(o.WebHookURL, o.Path)), util.ColorInfo(o.SourceURL))
+	log.Logger().Infof("Environment Controller is now listening on %s for WebHooks from the source repository %s to trigger promotions", util.ColorInfo(util.UrlJoin(o.WebHookURL, o.Path)), util.ColorInfo(o.SourceURL))
 	return http.ListenAndServe(":"+strconv.Itoa(o.Port), mux)
 }
 

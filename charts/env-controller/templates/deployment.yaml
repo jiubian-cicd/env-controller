@@ -63,7 +63,7 @@ spec:
         - name: "JX_BUILD_NUMBER"
           value: "1"
         - name: "ALIYUN_CODE"
-          value: {{ .Values.source.aliunCode }}
+          value: "{{ .Values.source.aliyunCode }}"
         command:
 {{ toYaml .Values.command | indent 10 }}
 {{ if .Values.args }}
