@@ -44,6 +44,7 @@ type ControllerEnvironmentOptions struct {
 	NoGitCredeentialsInit bool
 	NoRegisterWebHook     bool
 	RequireHeaders        bool
+	AliyunCode            bool
 	GitServerURL          string
 	GitOwner              string
 	GitRepo               string
@@ -94,6 +95,7 @@ func NewCmdControllerEnvironment(commonOpts *opts.CommonOptions) *cobra.Command 
 	cmd.Flags().BoolVarP(&options.NoGitCredeentialsInit, "no-git-init", "", false, "Disables checking we have setup git credentials on startup")
 	cmd.Flags().BoolVarP(&options.RequireHeaders, "require-headers", "", true, "If enabled we reject webhooks which do not have the github headers: 'X-GitHub-Event' and 'X-GitHub-Delivery'")
 	cmd.Flags().BoolVarP(&options.NoRegisterWebHook, "no-register-webhook", "", false, "Disables checking to register the webhook on startup")
+	cmd.Flags().BoolVarP(&options.AliyunCode, "aliyun-code", "", false, "Using aliyun code")
 	cmd.Flags().StringVarP(&options.SourceURL, "source-url", "s", "", "The source URL of the environment git repository")
 	cmd.Flags().StringVarP(&options.GitServerURL, "git-server-url", "", "", "The git server URL. If not specified defaults to $GIT_SERVER_URL")
 	cmd.Flags().StringVarP(&options.GitKind, "git-kind", "", "", "The kind of git repository. Should be one of: "+strings.Join(gits.KindGits, ", ")+". If not specified defaults to $GIT_KIND")
@@ -222,6 +224,8 @@ func (o *ControllerEnvironmentOptions) Run() error {
 	mux.Handle("/pushenv", http.HandlerFunc(o.doEnvGitUpdate))
 	mux.Handle(o.Path, http.HandlerFunc(o.handleWebHookRequests))
 
+	fmt.Sprintf("Environment Controller using aliyun code mode %t", o.AliyunCode)
+
 	fmt.Sprintf("Environment Controller is now listening on %s for WebHooks from the source repository %s to trigger promotions", util.ColorInfo(util.UrlJoin(o.WebHookURL, o.Path)), util.ColorInfo(o.SourceURL))
 	return http.ListenAndServe(":"+strconv.Itoa(o.Port), mux)
 }
@@ -231,8 +235,8 @@ func (o *ControllerEnvironmentOptions) ensureGitCrendentials(userName string, ap
 	if err != nil {
 		return err
 	}
-	data := "http://" + userName + ":" + apiToken + "@" + host
-	fileName := filepath.Join(userHome, ".git-credentials")
+	data := "http://" + userName + ":" + apiToken + "@" + host + "\n" + "https://" + userName + ":" + apiToken + "@" + host
+		fileName := filepath.Join(userHome, ".git-credentials")
 	return ioutil.WriteFile(fileName, []byte(data), util.DefaultWritePermissions)
 }
 
@@ -355,14 +359,42 @@ func (o *ControllerEnvironmentOptions) doGitPush(dir string) (string, error) {
 	return output, err
 }
 
-func (o *ControllerEnvironmentOptions) doGitClone(dir string, url string, w http.ResponseWriter, r *http.Request) (string, error) {
-	runner := &util.Command{
-		Args: []string {"step", "git", "fork-and-clone", "-b", url},
-		Name: "envctl",
-		Dir:  dir,
+func Exists(name string) bool {
+	if _, err := os.Stat(name); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
 	}
+	return true
+}
 
-	return runner.RunWithoutRetry()
+func (o *ControllerEnvironmentOptions) doGitClone(dir string, url string, w http.ResponseWriter, r *http.Request) (string, error) {
+	if !o.AliyunCode {
+		runner := &util.Command{
+			Args: []string {"step", "git", "fork-and-clone", "-b", url},
+			Name: "envctl",
+			Dir:  dir,
+		}
+
+		return runner.RunWithoutRetry()
+	} else {
+		targetDir := filepath.Join(dir, o.GitRepo)
+		if strings.HasSuffix(o.GitRepo, ".git") {
+			targetDir = filepath.Join(dir, o.GitRepo[:len(o.GitRepo) - 4])
+		}
+
+		if Exists(targetDir) {
+			os.RemoveAll(targetDir)
+		}
+
+		runner := &util.Command{
+			Args: []string {"clone",  url},
+			Name: "git",
+			Dir:  dir,
+		}
+
+		return runner.RunWithoutRetry()
+	}
 }
 
 func (o *ControllerEnvironmentOptions) doHelmServe(dir string) (string, error){
@@ -384,10 +416,18 @@ func (o *ControllerEnvironmentOptions) doHelmServe(dir string) (string, error){
 }
 
 func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWriter, r *http.Request) (string, error) {
+	targetDir := dir
+	if o.AliyunCode {
+		targetDir = filepath.Join(o.Dir, o.GitRepo)
+		if strings.HasSuffix(o.GitRepo, ".git") {
+			targetDir = filepath.Join(o.Dir, o.GitRepo[:len(o.GitRepo) - 4])
+		}
+	}
+
 	runner := &util.Command{
-		Args: []string {"step", "helm", "apply"},
+		Args: []string{"step", "helm", "apply"},
 		Name: "envctl",
-		Dir:  filepath.Join(dir, "env"),
+		Dir:  filepath.Join(targetDir, "env"),
 	}
 
 	return runner.RunWithoutRetry()

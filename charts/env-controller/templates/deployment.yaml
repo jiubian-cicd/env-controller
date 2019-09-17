@@ -34,11 +34,11 @@ spec:
         - name: "GIT_KIND"
           value: "{{ .Values.source.gitKind }}"
         - name: "GITHUB_USERNAME"
-          value: "{{ .Values.source.owner }}"
+          value: "{{ .Values.source.user }}"
         - name: "GITHUB_API_TOKEN"
           value: "{{ .Values.source.token }}"
         - name: "GITLAB_USERNAME"
-          value: "{{ .Values.source.owner }}"
+          value: "{{ .Values.source.user }}"
         - name: "GITLAB_API_TOKEN"
           value: "{{ .Values.source.token }}"
         - name: "OWNER"
@@ -62,6 +62,8 @@ spec:
         # lets pretend to be in a pipeline so that we load the Pipeline User credentials
         - name: "JX_BUILD_NUMBER"
           value: "1"
+        - name: "ALIYUN_CODE"
+          value: {{ .Values.source.aliunCode }}
         command:
 {{ toYaml .Values.command | indent 10 }}
 {{ if .Values.args }}
