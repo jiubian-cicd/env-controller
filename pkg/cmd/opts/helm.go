@@ -782,7 +782,7 @@ func (o *CommonOptions) HelmInitDependency(dir string, chartRepos []string) (str
 
 	if o.Helm().HelmBinary() == "helm" {
 		// need to check the tiller settings at this point
-		noTiller, helmTemplate := false, false
+		noTiller, helmTemplate := true, false
 
 		if noTiller || helmTemplate {
 			err = o.Helm().Init(true, "", "", false)
