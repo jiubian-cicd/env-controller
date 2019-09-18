@@ -730,7 +730,9 @@ func (o *CommonOptions) AddChartRepos(dir string, helmBinary string, chartRepos 
 			for _, dep := range requirements.Dependencies {
 				repo := dep.Repository
 				if repo != "" && !util.StringMapHasValue(installedChartRepos, repo) && repo != DefaultChartRepo && !strings.HasPrefix(repo, "file:") && !strings.HasPrefix(repo, "alias:") && !strings.HasPrefix(repo, "@") {
-					name, err := o.AddHelmBinaryRepoIfMissing(repo, "", "", "")
+					username := os.Getenv("HELM_REPO_USERNAME")
+					password := os.Getenv("HELM_REPO_PASSWORD")
+					name, err := o.AddHelmBinaryRepoIfMissing(repo, "", username, password)
 					if err != nil {
 						return errors.Wrapf(err, "failed to add Helm repository '%s'", repo)
 					}
