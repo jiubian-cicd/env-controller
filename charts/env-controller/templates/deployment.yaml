@@ -64,6 +64,10 @@ spec:
           value: "1"
         - name: "ALIYUN_CODE"
           value: "{{ .Values.source.aliyunCode }}"
+        - name: "HELM_REPO_USERNAME"
+          value: "{{ .Values.helm.repoUserName }}"
+        - name: "HELM_REPO_PASSWORD"
+          value: "{{ .Values.helm.repoPassword }}"
         command:
 {{ toYaml .Values.command | indent 10 }}
 {{ if .Values.args }}
