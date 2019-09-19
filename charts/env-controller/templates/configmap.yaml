@@ -31,3 +31,16 @@ kind: ConfigMap
 metadata:
   name: config-logging
   namespace: default
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  labels:
+    app: env-controller
+  name: init.check
+data:
+  {{- $files := .Files }}
+  {{- range tuple  "check.py" }}
+  {{ . }}: |-
+    {{ $files.Get . | nindent 4}}
+  {{- end }}

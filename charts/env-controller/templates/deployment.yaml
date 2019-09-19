@@ -91,7 +91,12 @@ spec:
         volumeMounts:
         - mountPath: /etc/config-logging
           name: config-logging
+        - mountPath: /env-controller
+          name: check
       volumes:
       - configMap:
           name: config-logging
         name: config-logging
+      - configMap:
+          name: init.check
+        name: check

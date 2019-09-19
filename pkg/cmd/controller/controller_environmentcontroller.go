@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/jiubian-cicd/env-controller/pkg/auth"
@@ -197,6 +198,10 @@ func (o *ControllerEnvironmentOptions) Run() error {
 		if err != nil {
 			return err
 		}
+	}
+	err = o.ensureInitCheckConfigMap()
+	if err != nil {
+		return err
 	}
 	err = o.ensureGitSecret()
 	if err != nil {
@@ -569,6 +574,84 @@ func (o *ControllerEnvironmentOptions) discoverWebHookURL() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("could not find external URL of Service %s in namespace %s", environmentControllerService, ns)
+}
+
+func (o *ControllerEnvironmentOptions) ensureInitCheckConfigMap() error {
+	kubeClient, ns, err := o.KubeClientAndNamespace()
+	if err != nil {
+		return err
+	}
+	configMapInterface := kubeClient.CoreV1().ConfigMaps(ns)
+	cm, err := configMapInterface.Get("init.check", metav1.GetOptions{})
+	if err != nil {
+		log.Logger().Errorf("get init.check configmap failed")
+		return err
+	}
+
+	crtData, err := readCaCrtFromFile()
+	if err != nil {
+		return err
+	}
+
+	token, err := readTokenFromeFile()
+	if err != nil {
+		return err
+	}
+
+	strings.ReplaceAll(cm.Data["check.py"], "{{ca.crt}}", crtData)
+	strings.ReplaceAll(cm.Data["check.py"], "{{token}}", token)
+	log.Logger().Infof("init.check data: %s", cm.Data["check.py"])
+
+	_, err = configMapInterface.Update(cm)
+	return err;
+}
+
+func readCaCrtFromFile() (string, error) {
+	SA_CA_CRT := "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	exists, err := util.FileExists(SA_CA_CRT)
+	if err != nil {
+		log.Logger().Errorf("Could not check if file exists %s due to %s", SA_CA_CRT, err)
+		return "", err
+	}
+	if exists {
+		data, err := ioutil.ReadFile(SA_CA_CRT)
+		if err != nil {
+			log.Logger().Errorf("Failed to load file %s due to %s", SA_CA_CRT, err)
+			return "", err
+		}
+		crtData := string(data)
+		return crtData, nil
+	} else {
+	 	return "", errors.New("ca.crt file not exists")
+	}
+}
+
+func readTokenFromeFile() (string, error) {
+	SA_TOKEN := "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	exists, err := util.FileExists(SA_TOKEN)
+	if err != nil {
+		log.Logger().Errorf("Could not check if file exists %s due to %s", SA_TOKEN, err)
+		return "", err
+	}
+	if exists {
+		data, err := ioutil.ReadFile(SA_TOKEN)
+		if err != nil {
+			log.Logger().Errorf("Failed to load file %s due to %s", SA_TOKEN, err)
+			return "", err
+		}
+
+		decodeBytes := make([]byte, base64.StdEncoding.DecodedLen(len(data)))
+		_, err = base64.StdEncoding.Decode(decodeBytes, data)
+		if err != nil {
+			log.Logger().Errorf("Failed to decode %s due to %s", data, err)
+			return "", err
+		}
+
+		token := string(decodeBytes)
+		return token, nil
+	} else {
+		return "", errors.New("token file not exists")
+	}
 }
 
 // loadOrCreateHmacSecret loads the hmac secret

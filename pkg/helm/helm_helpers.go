@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"github.com/jiubian-cicd/env-controller/pkg/kube"
+	"github.com/jiubian-cicd/env-controller/pkg/log"
 	secreturl "github.com/jiubian-cicd/env-controller/pkg/secreturl"
 	"github.com/jiubian-cicd/env-controller/pkg/versionstream"
 	"io"
@@ -695,7 +696,7 @@ func AddHelmRepoIfMissing(helmURL, repoName, username, password string, helmer H
 				break
 			}
 		}
-		fmt.Sprintf("Adding missing Helm repo: %s %s", util.ColorInfo(repoName), util.ColorInfo(helmURL))
+		log.Logger().Infof("Adding missing Helm repo: %s %s", util.ColorInfo(repoName), util.ColorInfo(helmURL))
 		username, password, err = DecorateWithCredentials(helmURL, username, password, secretURLClient, in, out, outErr)
 		if err != nil {
 			return "", errors.WithStack(err)
@@ -704,7 +705,7 @@ func AddHelmRepoIfMissing(helmURL, repoName, username, password string, helmer H
 		if err != nil {
 			return "", errors.Wrapf(err, "failed to add the repository '%s' with URL '%s'", repoName, helmURL)
 		}
-		fmt.Sprintf("Successfully added Helm repository %s.", repoName)
+		log.Logger().Infof("Successfully added Helm repository %s.", repoName)
 	} else {
 		repoName = existingName
 	}
