@@ -9,6 +9,8 @@ import random
 import logging
 import commands
 import base64
+import yaml
+import traceback
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -22,6 +24,8 @@ config.load_incluster_config()
 api_instance = client.CoreV1Api()
 appsv1beta1_instance = client.AppsV1beta1Api()
 
+default_namespace = "default"
+
 # Appinstance crd info
 group = "apps.mwops.alibaba-inc.com"
 version = "v1alpha1"
@@ -30,48 +34,82 @@ plural = "appinstances"
 mysqlha_type = "apps.mwops.alibaba-inc.com/v1alpha1.database.mysqlha"
 xdb_type = "apps.mwops.alibaba-inc.com/v1alpha1.database.xdb"
 
+kubeConfig = """apiVersion: v1
+kind: Config
+users:
+- name: env-controller
+  user:
+    token: %s
+clusters:
+- cluster:
+    certificate-authority-data: %s
+    server: https://kubernetes/
+  name: self-hosted-cluster
+contexts:
+- context:
+    cluster: self-hosted-cluster
+    user: env-controller
+  name: svcs-acct-context
+current-context: svcs-acct-context
+""" % (token, caCrt)
+
+def writeKubeConfig():
+    with open(local_core_k8s_cfg_path, 'w') as fp:
+        fp.write(kubeConfig)
 
 class Appinstance(object):
 
-    def __init__(self, name):
-        self.AppinstanceName = name
+    def __init__(self):
         config.load_kube_config(config_file=local_core_k8s_cfg_path)
-        self.Client = client.CustomObjectsApi()
-        logging.info("My appinstance name:%s" % self.AppinstanceName)
-        self.Appinstance = self.get_appinstance(self.AppinstanceName)
-        if not self.Appinstance:
-            logging.error("Exception when get custom_object of Appinstance %s" % name)
-            exit(1)
-        self.Dependency = self.Appinstance.get("spec", []).get("dependencies", [])
-        self.Dependency = [d for d in self.Dependency if
-                           d.get("instanceName") != "coredns-0"]
-        logging.info("All dependencies: %s" % self.Dependency)
+        self.Dependency = self.get_dependency()
 
-    def get_appinstance(self, name):
+
+    def get_dependency(self):
+        dependencyConfigMapName = str(os.getenv("MyChart")) + ".dependency"
+        #TODO use namespace var instead of "default"
         try:
-            appinsatnce = self.Client.get_namespaced_custom_object(group=group,
-                                                                   version=version,
-                                                                   namespace=namespace,
-                                                                   plural=plural,
-                                                                   name=name)
+            dependencyConfigMap = client.CoreV1Api().read_namespaced_config_map(dependencyConfigMapName, default_namespace)
+            dependenciesStr = dependencyConfigMap.data['Dependency.yaml']
+            if not dependenciesStr:
+                return None
+            return yaml.load(dependenciesStr).get("dependencies", [])
         except ApiException as e:
-            logging.error("Exception when calling CustomObjectsApi->get_namespaced_custom_object %s: %s" % (name, e))
+            traceback.print_exc()
             return None
-        return appinsatnce
 
-    def update_appinstance(self):
+    def is_deployment_ready(self, deployment):
+        return deployment.status.available_replicas == deployment.status.replicas
+
+    def is_statefulset_ready(self, statefulset):
+        return statefulset.status.available_replicas == statefulset.status.replicas
+
+    def is_job_ready(self, job):
+        return job.spec.completions == job.status.succeeded
+
+    def check_one_appinstance_status(self, name, version):
+        myChartLabel = "%s-%s" % (name, version)
         try:
-            self.Appinstance = self.get_appinstance(self.AppinstanceName)
+            returnObj = client.ExtensionsV1beta1Api().list_namespaced_deployment(default_namespace, label_selector="MyChart=%s" % myChartLabel)
+            deployments = returnObj.items
+            if len(deployments) != 0:
+                for deployment in deployments:
+                    if not self.is_deployment_ready(deployment):
+                        return False
+            returnObj = client.AppsV1beta1Api().list_namespaced_stateful_set(default_namespace, label_selector="MyChart=%s" % myChartLabel)
+            statefulsets = returnObj.items
+            if len(statefulsets) != 0:
+                for statefulset in statefulsets:
+                    if not self.is_statefulset_ready(statefulset):
+                        return False
+            returnObj = client.BatchV1Api().list_namespaced_job(default_namespace, label_selector="MyChart=%s" % myChartLabel)
+            jobs = returnObj.items
+            if len(jobs) != 0:
+                for job in jobs:
+                    if not self.is_job_ready(job):
+                        return False
+            return True
         except ApiException as e:
-            logging.error("Exception when get custom_object of Appinstance %s" % self.AppinstanceName)
-            exit(1)
-        self.Dependency = [d for d in self.Dependency if
-                           d.get("instanceName") != "coredns-0"]
-
-    def check_one_appinstance_status(self, name):
-        appinstance = self.get_appinstance(name)
-        if not appinstance:
-            return False, "Appinstance {} don't exist".format(name)
+            traceback.print_exc()
 
         if appinstance.get("status").get("Phase") == "Ready":
             return True, None
@@ -80,38 +118,25 @@ class Appinstance(object):
             return False, Message
 
     def check_dependencies_until_all_successed(self):
+        if not self.Dependency:
+            return True
         while True:
             RandomSleep()
             OK = True
-            self.update_appinstance()
-            while not CheckCoredns():
-                RandomSleep()
-                continue
             for instance in self.Dependency:
                 instanceOK = True
                 for i in range(10):
-                    # check db
-                    if instance.get("instanceName") == "mysqlha-0":
-                        instanceOK = CheckMysqlha(self.Appinstance)
-                        if instanceOK:
-                            instanceOK = True
-                            break
-                        else:
-                            instanceOK = False
-                            RandomSleep()
-
                     # check appinstance status
-                    status, message = self.check_one_appinstance_status(instance.get("instanceName"))
+                    status = self.check_one_appinstance_status(instance.get("name"), instance.get("version"))
                     if status:
                         instanceOK = True
-                        logging.info("The status of Appinstance %s is ready." % instance.get("instanceName"))
+                        print "The status of Appinstance %s-%s is ready." % (instance.get("name"), instance.get("version"))
                         break
                     else:
-                        logging.warning("The status of Appinstance %s is NotReady. Message: %s" % (
-                            instance.get("instanceName"), message))
+                        logging.warning("The status of Appinstance %s-%s is NotReady." % (
+                            instance.get("name"), instance.get("version")))
                         instanceOK = False
                         RandomSleep()
-
                 if instanceOK:
                     continue
                 else:
@@ -121,106 +146,10 @@ class Appinstance(object):
                 logging.info("All dependencies is checked ok.")
                 return True
 
-
-def initKubeoneCfg():
-    body = client.CoreV1Api().read_namespaced_config_map(core_k8s_cfg_name, core_k8s_cfg_namespace)
-    # print body
-    if "core_cfg" in body.data:
-        kubecfg = body.data["core_cfg"]
-    f = open(local_core_k8s_cfg_path, 'w+')
-    f.write(kubecfg)
-    f.close()
-
-
-def initLogging(logFilename):
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s-%(levelname)s- %(message)s',
-        datefmt='%y-%m-%d %H:%M',
-        filename=logFilename,
-        filemode='w');
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s-%(levelname)s: %(message)s')
-    console.setFormatter(formatter)
-    logging.getLogger('').addHandler(console)
-
-
-def GetInitInfo():
-    env_dist = os.environ
-    mychart = env_dist.get('MyChart')
-    logging.info("Start checking the dependence for the release %s" % mychart)
-    return mychart
-
-#
-# def CheckCoredns():
-#     body = appsv1beta1_instance.read_namespaced_deployment("coredns", "kube-system")
-#     for i in range(3):
-#         if body.status.replicas == body.status.ready_replicas:
-#             logging.info("The status of coredns is ready.")
-#             return True
-#         else:
-#             logging.warning("The status of coredns is not ready.")
-#             RandomSleep()
-#             continue
-#     return False
-
-#
-# def CheckMysqlha(appinstance):
-#     resources = appinstance.get("spec").get("resources")
-#     if not resources:
-#         return True
-#     for r in resources:
-#         if r.get("type") == mysqlha_type:
-#             mysql_host = "db.acs-system"
-#             mysql_port = 3306
-#             mysql_user = "root"
-#             mysql_password = "aliyun_cos"
-#             mysql_ping = commands.getstatusoutput(
-#                 "mysqladmin -u" + mysql_user + " -p" + mysql_password + " -h" + mysql_host + " ping")
-#             if mysql_ping[0] != 0:
-#                 logging.info("db_host:%s  db_port:%s  db_user:%s" % (mysql_host, mysql_port, mysql_user))
-#                 logging.warning("The status of database is not ready.")
-#                 logging.error("mysqladmin ping error:%s" % mysql_ping[1])
-#                 return False
-#             else:
-#                 logging.info("The status of database is ready.")
-#         elif r.get("type") == xdb_type:
-#             for wl in appinstance.get("spec").get("workloadSettings"):
-#                 if wl.get("name") == "deployToNamespace":
-#                     namespace = wl.get("name")
-#             for p in r.get("parameterValues"):
-#                 xdb_sectet_name = p.get("value")
-#                 body = api_instance.read_namespaced_secret(xdb_sectet_name, namespace)
-#                 db_host = base64.b64decode(body.data.get("db_host"))
-#                 db_password = base64.b64decode(body.data.get("db_password"))
-#                 db_port = base64.b64decode(body.data.get("db_port"))
-#                 db_user = base64.b64decode(body.data.get("db_user"))
-#                 checkdb = "mysqladmin -u{db_user} -P{db_port} -p{db_password} -h{db_host} ping".format(db_user=db_user,
-#                                                                                                        db_port=db_port,
-#                                                                                                        db_password=db_password,
-#                                                                                                        db_host=db_host)
-#                 mysql_ping = commands.getstatusoutput(checkdb)
-#                 if mysql_ping[0] != 0:
-#                     logging.info("db_host:%s  db_port:%s  db_user:%s" % (db_host, db_port, db_user))
-#                     logging.error("mysqladmin ping error:%s" % mysql_ping[1])
-#                     return False
-#                 else:
-#                     logging.info("xdb is ready. db_host:%s db_user:%s", db_host, db_user)
-#     return True
-
-
 def RandomSleep():
     time.sleep(random.randint(5, 10))
 
-
 if __name__ == '__main__':
-    initLogging('logger.log')
-    logging.info("Check program is running ...")
-    initKubeoneCfg()
-    # my_appinstance_name = GetInitInfo()
-    my_appinstance_name = '-'.join(GetInitInfo().split("-")[:-1])
-    my_appinstance_name = '-'.join([my_appinstance_name, "0"])
-    my_appinstance_name = my_appinstance_name.replace(".", "-")
-    app = Appinstance(my_appinstance_name)
+    writeKubeConfig()
+    app = Appinstance()
     app.check_dependencies_until_all_successed()
