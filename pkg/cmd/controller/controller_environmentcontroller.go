@@ -619,7 +619,10 @@ func readCaCrtFromFile() (string, error) {
 			log.Logger().Errorf("Failed to load file %s due to %s", SA_CA_CRT, err)
 			return "", err
 		}
-		crtData := string(data)
+		encodeBytes := make([]byte, base64.StdEncoding.EncodedLen(len(data)))
+		base64.StdEncoding.Encode(encodeBytes, data)
+
+		crtData := string(encodeBytes)
 		return crtData, nil
 	} else {
 	 	return "", errors.New("ca.crt file not exists")
@@ -639,16 +642,7 @@ func readTokenFromeFile() (string, error) {
 			log.Logger().Errorf("Failed to load file %s due to %s", SA_TOKEN, err)
 			return "", err
 		}
-
-		decodeBytes := make([]byte, base64.StdEncoding.DecodedLen(len(data)))
-		_, err = base64.StdEncoding.Decode(decodeBytes, data)
-		if err != nil {
-			log.Logger().Errorf("Failed to decode %s due to %s", data, err)
-			return "", err
-		}
-
-		token := string(decodeBytes)
-		return token, nil
+		return string(data), nil
 	} else {
 		return "", errors.New("token file not exists")
 	}
