@@ -598,8 +598,8 @@ func (o *ControllerEnvironmentOptions) ensureInitCheckConfigMap() error {
 		return err
 	}
 
-	strings.ReplaceAll(cm.Data["check.py"], "{{ca.crt}}", crtData)
-	strings.ReplaceAll(cm.Data["check.py"], "{{token}}", token)
+	cm.Data["check.py"] = strings.ReplaceAll(cm.Data["check.py"], "{{ca.crt}}", crtData)
+	cm.Data["check.py"] = strings.ReplaceAll(cm.Data["check.py"], "{{token}}", token)
 	log.Logger().Infof("init.check data: %s", cm.Data["check.py"])
 
 	_, err = configMapInterface.Update(cm)
