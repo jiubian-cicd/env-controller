@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-__Author__ = '昊赜<caihong.lch@alibaba-inc.com>'
+__Author__ = '九辩<jiangyu.zjy@alibaba-inc.com>'
 """
    运行时依赖检查: 部署或异常恢复情况下保证顺序
 """
@@ -17,22 +17,9 @@ from kubernetes.client.rest import ApiException
 
 caCrt="""{{ca.crt}}"""
 token="""{{token}}"""
-core_k8s_cfg_name = "kube-external-config"
-core_k8s_cfg_namespace = "kube-system"
 local_core_k8s_cfg_path = "/root/core_cfg"
 config.load_incluster_config()
-api_instance = client.CoreV1Api()
-appsv1beta1_instance = client.AppsV1beta1Api()
-
 default_namespace = "default"
-
-# Appinstance crd info
-group = "apps.mwops.alibaba-inc.com"
-version = "v1alpha1"
-namespace = "ark-system"
-plural = "appinstances"
-mysqlha_type = "apps.mwops.alibaba-inc.com/v1alpha1.database.mysqlha"
-xdb_type = "apps.mwops.alibaba-inc.com/v1alpha1.database.xdb"
 
 kubeConfig = """apiVersion: v1
 kind: Config
@@ -110,12 +97,7 @@ class Appinstance(object):
             return True
         except ApiException as e:
             traceback.print_exc()
-
-        if appinstance.get("status").get("Phase") == "Ready":
-            return True, None
-        else:
-            Message = appinstance.get("status").get("Message")
-            return False, Message
+        return False
 
     def check_dependencies_until_all_successed(self):
         if not self.Dependency:
