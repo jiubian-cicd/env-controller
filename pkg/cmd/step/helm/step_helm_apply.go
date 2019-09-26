@@ -318,7 +318,7 @@ func (o *StepHelmApplyOptions) Run() error {
 	}
 	if o.Wait {
 		helmOptions.Wait = true
-		err = o.InstallChartWithOptionsAndTimeout(helmOptions, "600")
+		err = o.InstallChartWithOptionsAndTimeout(helmOptions, "1800")
 	} else {
 		err = o.InstallChartWithOptions(helmOptions)
 	}
