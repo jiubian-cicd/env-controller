@@ -697,10 +697,10 @@ func AddHelmRepoIfMissing(helmURL, repoName, username, password string, helmer H
 			}
 		}
 		log.Logger().Infof("Adding missing Helm repo: %s %s", util.ColorInfo(repoName), util.ColorInfo(helmURL))
-		username, password, err = DecorateWithCredentials(helmURL, username, password, secretURLClient, in, out, outErr)
-		if err != nil {
-			return "", errors.WithStack(err)
-		}
+		//username, password, err = DecorateWithCredentials(helmURL, username, password, secretURLClient, in, out, outErr)
+		//if err != nil {
+		//	return "", errors.WithStack(err)
+		//}
 		err = helmer.AddRepo(repoName, helmURL, username, password)
 		if err != nil {
 			return "", errors.Wrapf(err, "failed to add the repository '%s' with URL '%s'", repoName, helmURL)
