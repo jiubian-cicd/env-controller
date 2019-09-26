@@ -425,15 +425,18 @@ func (o *ControllerEnvironmentOptions) doHelmServe(dir string) (string, error){
 
 func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWriter, r *http.Request) (string, error) {
 	targetDir := dir
+	releaseName := "tmp-release-name"
 	if o.AliyunCode {
+		releaseName = o.GitRepo
 		targetDir = filepath.Join(o.Dir, o.GitRepo)
 		if strings.HasSuffix(o.GitRepo, ".git") {
 			targetDir = filepath.Join(o.Dir, o.GitRepo[:len(o.GitRepo) - 4])
+			releaseName = o.GitRepo[:len(o.GitRepo) - 4]
 		}
 	}
 
 	runner := &util.Command{
-		Args: []string{"step", "helm", "apply"},
+		Args: []string{"step", "helm", "apply", "--name", releaseName},
 		Name: "envctl",
 		Dir:  filepath.Join(targetDir, "env"),
 	}
