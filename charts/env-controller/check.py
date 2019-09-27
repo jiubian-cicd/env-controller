@@ -68,7 +68,7 @@ class Appinstance(object):
         return deployment.status.available_replicas == deployment.status.replicas
 
     def is_statefulset_ready(self, statefulset):
-        return statefulset.status.available_replicas == statefulset.status.replicas
+        return statefulset.status.ready_replicas == statefulset.status.replicas
 
     def is_job_ready(self, job):
         return job.spec.completions == job.status.succeeded
@@ -76,25 +76,29 @@ class Appinstance(object):
     def check_one_appinstance_status(self, name, version):
         myChartLabel = "%s-%s" % (name, version)
         try:
+            checked = False
             returnObj = client.ExtensionsV1beta1Api().list_namespaced_deployment(default_namespace, label_selector="MyChart=%s" % myChartLabel)
             deployments = returnObj.items
             if len(deployments) != 0:
+                checked = True
                 for deployment in deployments:
                     if not self.is_deployment_ready(deployment):
                         return False
             returnObj = client.AppsV1beta1Api().list_namespaced_stateful_set(default_namespace, label_selector="MyChart=%s" % myChartLabel)
             statefulsets = returnObj.items
             if len(statefulsets) != 0:
+                checked = True
                 for statefulset in statefulsets:
                     if not self.is_statefulset_ready(statefulset):
                         return False
             returnObj = client.BatchV1Api().list_namespaced_job(default_namespace, label_selector="MyChart=%s" % myChartLabel)
             jobs = returnObj.items
             if len(jobs) != 0:
+                checked = True
                 for job in jobs:
                     if not self.is_job_ready(job):
                         return False
-            return True
+            return checked
         except ApiException as e:
             traceback.print_exc()
         return False
