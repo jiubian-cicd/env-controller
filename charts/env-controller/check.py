@@ -74,24 +74,28 @@ class Appinstance(object):
         return job.spec.completions == job.status.succeeded
 
     def check_one_appinstance_status(self, name, version):
-        myChartLabel = "%s-%s" % (name, version)
+        myChartLabel = "MyChart=%s-%s" % (name, version)
+        appLabel = "app=%s" % name
         try:
             checked = False
-            returnObj = client.ExtensionsV1beta1Api().list_namespaced_deployment(default_namespace, label_selector="MyChart=%s" % myChartLabel)
+            returnObj = client.ExtensionsV1beta1Api().list_namespaced_deployment(default_namespace, label_selector=appLabel)
             deployments = returnObj.items
             if len(deployments) != 0:
                 checked = True
                 for deployment in deployments:
                     if not self.is_deployment_ready(deployment):
                         return False
-            returnObj = client.AppsV1beta1Api().list_namespaced_stateful_set(default_namespace, label_selector="MyChart=%s" % myChartLabel)
+            returnObj = client.AppsV1beta1Api().list_namespaced_stateful_set(default_namespace, label_selector=appLabel)
             statefulsets = returnObj.items
             if len(statefulsets) != 0:
                 checked = True
                 for statefulset in statefulsets:
                     if not self.is_statefulset_ready(statefulset):
                         return False
-            returnObj = client.BatchV1Api().list_namespaced_job(default_namespace, label_selector="MyChart=%s" % myChartLabel)
+                    else:
+                        if name == 'vipserver':
+                            time.sleep(150)
+            returnObj = client.BatchV1Api().list_namespaced_job(default_namespace, label_selector=appLabel)
             jobs = returnObj.items
             if len(jobs) != 0:
                 checked = True
