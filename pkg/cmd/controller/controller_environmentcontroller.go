@@ -436,7 +436,7 @@ func (o *ControllerEnvironmentOptions) doHelmApply(dir string, w http.ResponseWr
 	}
 
 	runner := &util.Command{
-		Args: []string{"step", "helm", "apply", "--wait", "false", "--name", releaseName},
+		Args: []string{"step", "helm", "apply", "--wait=false", "--name", releaseName},
 		Name: "envctl",
 		Dir:  filepath.Join(targetDir, "env"),
 	}
