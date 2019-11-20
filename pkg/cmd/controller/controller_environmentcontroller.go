@@ -4,12 +4,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/golang/glog"
 	"github.com/jiubian-cicd/env-controller/pkg/auth"
 	"github.com/jiubian-cicd/env-controller/pkg/log"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"io/ioutil"
+	"k8s.io/kubernetes/pkg/apis/core"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +29,9 @@ import (
 	"github.com/jiubian-cicd/env-controller/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	clientgocorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
 )
 
 const (
@@ -59,6 +64,7 @@ type ControllerEnvironmentOptions struct {
 	GitRepositoryOptions   gits.GitRepositoryOptions
 
 	secret                []byte
+	recorder              record.EventRecorder
 }
 
 var (
@@ -72,8 +78,13 @@ var (
 
 // NewCmdControllerEnvironment creates the command
 func NewCmdControllerEnvironment(commonOpts *opts.CommonOptions) *cobra.Command {
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(glog.Infof)
+	k8sClient, _ := commonOpts.KubeClient()
+	eventBroadcaster.StartRecordingToSink(&clientgocorev1.EventSinkImpl{Interface: k8sClient.CoreV1().Events("")})
 	options := ControllerEnvironmentOptions{
 		CommonOptions: commonOpts,
+		recorder:       eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "env-controller-event-generator"}),
 	}
 	cmd := &cobra.Command{
 		Use:     "environment",
@@ -107,6 +118,7 @@ func NewCmdControllerEnvironment(commonOpts *opts.CommonOptions) *cobra.Command 
 	cmd.Flags().StringVarP(&options.Dir, "dir", "", "", "The directory in which the git repo is checked out, by default the working directory")
 
 	opts.AddGitRepoOptionsArguments(cmd, &options.GitRepositoryOptions)
+
 	return cmd
 }
 
@@ -376,6 +388,15 @@ func Exists(name string) bool {
 	return true
 }
 
+func (o *ControllerEnvironmentOptions) doGitLog(dir string, w http.ResponseWriter, r *http.Request) (string, error) {
+	runner := &util.Command{
+		Args: []string {"git", "log", "-n", "1"},
+		Name: "envctl",
+		Dir:  dir,
+	}
+	return runner.RunWithoutRetry()
+}
+
 func (o *ControllerEnvironmentOptions) doGitClone(dir string, url string, w http.ResponseWriter, r *http.Request) (string, error) {
 	if !o.AliyunCode {
 		runner := &util.Command{
@@ -514,18 +535,38 @@ func (o *ControllerEnvironmentOptions) doUpdate(w http.ResponseWriter, r *http.R
 		}
 		o.Dir = dir
 	}
+	listOptions := metav1.ListOptions{}
+	listOptions.LabelSelector = "app=env-controller";
+	client, ns, _ := o.KubeClientAndDevNamespace()
+	list, err := client.CoreV1().Pods(ns).List(listOptions)
+	if err != nil {
+		log.Logger().Infof("get env-controller pod failed")
+		o.returnError(err, err.Error(), w, r)
+	}
+	pod := list.Items[0]
+
 
 	output, err := o.doGitClone(o.Dir, o.SourceURL, w, r)
 	if err != nil {
 		log.Logger().Infof("git clone error: %s", output)
+		o.recorder.Eventf(&pod, core.EventTypeWarning, "Git clone failed", "Git clone from %s to %s failed", o.SourceURL, o.Dir)
 		o.returnError(err, err.Error(), w, r)
 	}
+
+	logOutPut, err := o.doGitLog(o.Dir, w, r)
+	if err != nil {
+		log.Logger().Infof("git log error: %s", logOutPut)
+	}
+	o.recorder.Eventf(&pod, core.EventTypeNormal, "Start env update process", "Lasted commit: %s", logOutPut)
 
 	output, err = o.doHelmApply(o.Dir, w, r)
 	if err != nil {
 		log.Logger().Infof("helm apply error: %s", output)
+		o.recorder.Eventf(&pod, core.EventTypeWarning, "Helm apply failed", "error messages: %s", output)
 		o.returnError(err, err.Error(), w, r)
 	}
+
+	o.recorder.Eventf(&pod, core.EventTypeNormal, "Helm apply success", "Lasted commit: %s", logOutPut)
 	w.Write([]byte("OK"))
 }
 
