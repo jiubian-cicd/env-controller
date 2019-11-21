@@ -390,8 +390,8 @@ func Exists(name string) bool {
 
 func (o *ControllerEnvironmentOptions) doGitLog(dir string, w http.ResponseWriter, r *http.Request) (string, error) {
 	runner := &util.Command{
-		Args: []string {"git", "log", "-n", "1"},
-		Name: "envctl",
+		Args: []string {"log", "-n", "1"},
+		Name: "git",
 		Dir:  dir,
 	}
 	return runner.RunWithoutRetry()
@@ -557,16 +557,16 @@ func (o *ControllerEnvironmentOptions) doUpdate(w http.ResponseWriter, r *http.R
 	if err != nil {
 		log.Logger().Infof("git log error: %s", logOutPut)
 	}
-	o.recorder.Eventf(&pod, core.EventTypeNormal, "Start env update process", "Lasted commit: %s", logOutPut)
+	o.recorder.Eventf(&pod, core.EventTypeNormal, "Start updating the environment", "Lasted commit: %s", logOutPut)
 
 	output, err = o.doHelmApply(o.Dir, w, r)
 	if err != nil {
 		log.Logger().Infof("helm apply error: %s", output)
-		o.recorder.Eventf(&pod, core.EventTypeWarning, "Helm apply failed", "error messages: %s", output)
+		o.recorder.Eventf(&pod, core.EventTypeWarning, "Update environment failed", "error messages: %s", output)
 		o.returnError(err, err.Error(), w, r)
 	}
 
-	o.recorder.Eventf(&pod, core.EventTypeNormal, "Helm apply success", "Lasted commit: %s", logOutPut)
+	o.recorder.Eventf(&pod, core.EventTypeNormal, "Update environment success", "Lasted commit: %s", logOutPut)
 	w.Write([]byte("OK"))
 }
 
