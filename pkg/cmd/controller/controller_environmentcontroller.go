@@ -553,7 +553,11 @@ func (o *ControllerEnvironmentOptions) doUpdate(w http.ResponseWriter, r *http.R
 		o.returnError(err, err.Error(), w, r)
 	}
 
-	logOutPut, err := o.doGitLog(o.Dir, w, r)
+	targetDir := filepath.Join(o.Dir, o.GitRepo)
+	if strings.HasSuffix(o.GitRepo, ".git") {
+		targetDir = filepath.Join(o.Dir, o.GitRepo[:len(o.GitRepo) - 4])
+	}
+	logOutPut, err := o.doGitLog(targetDir, w, r)
 	if err != nil {
 		log.Logger().Infof("git log error: %s", logOutPut)
 	}
